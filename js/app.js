@@ -1585,27 +1585,22 @@ function renderScore() {
           return;
         }
         let spItem = null;
-        if (sg.chord || sg.rhythm) {
-          // 歌詞のないリズム表記は、歌詞の段に置く(幅が広がって、コードと区切りがずれない)。歌詞があるときは、コードの横に小さく添える
-          const rhythmInLyric = sg.rhythm && !sg.text;
-          if (sg.chord) {
-            const ch = el('span', 'ch', disp(sg.chord));
-            if (sg.rhythm && !rhythmInLyric) ch.append(el('span', 'rhy', ' ' + sg.rhythm));
-            const item = { mk, label: ch, sp: el('span', 'sp') }; // sp: 歌詞が短いときや拍の長さに合わせて、この範囲を右に広げる余白
-            spItem = item;
-            blk.chords.push(sg.chord);
-            blk.chordEls.push(ch);
-            item.rng = el('span', 'rng ' + (rc++ % 2 ? 'rb' : 'ra')); // 隣り合う担当範囲は、色を交互にする
-            cell._cl.append(item.rng);
-            cell._cl.append(ch);
-            cell._it.push(item);
-          }
-          if (rhythmInLyric) cell._ly.append(el('span', 'rhy', sg.rhythm));
-        }
-        if (sg.text) {
-          if (isRhythmOnly(sg.text)) cell._ly.append(el('span', 'rhy', sg.text));
-          else cell._ly.append(lyricNodes(sg.text, yomi));
-        }
+        // リズム表記(-- や > など)は、歌詞の段ではなく、コードの横に小さく添える。コードのない場所にだけ、歌詞の段に置く
+        const textRhy = isRhythmOnly(sg.text);
+        const rhy = [sg.rhythm, textRhy ? sg.text.trim() : ''].filter(Boolean).join(' ');
+        if (sg.chord) {
+          const ch = el('span', 'ch', disp(sg.chord));
+          if (rhy) ch.append(el('span', 'rhy', ' ' + rhy));
+          const item = { mk, label: ch, sp: el('span', 'sp') }; // sp: 歌詞が短いときや拍の長さに合わせて、この範囲を右に広げる余白
+          spItem = item;
+          blk.chords.push(sg.chord);
+          blk.chordEls.push(ch);
+          item.rng = el('span', 'rng ' + (rc++ % 2 ? 'rb' : 'ra')); // 隣り合う担当範囲は、色を交互にする
+          cell._cl.append(item.rng);
+          cell._cl.append(ch);
+          cell._it.push(item);
+        } else if (rhy) cell._ly.append(el('span', 'rhy', rhy));
+        if (sg.text && !textRhy) cell._ly.append(lyricNodes(sg.text, yomi));
         if (spItem) cell._ly.append(spItem.sp);
       });
       segs.querySelectorAll('.cell').forEach((c) => { cell = c; endMark(); });
