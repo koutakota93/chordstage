@@ -29,7 +29,7 @@ const PRESETS = [
   { id: 'green', name: 'グリーン(黒板風)', theme: 'dark', colors: { bg: '#0f2217', chord: '#ffe08a', lyric: '#e9f5ec', bar: '#86ad92', hl: '#2c6b46', hlChord: '#ffeaa8', hlLyric: '#ffffff', hlBar: '#c4e8d1', rngA: '#fde68a', rngB: '#a7f3d0', now: '#ffd23f', nowFg: '#1a1100' } },
   { id: 'paper', name: 'ペーパー(明るい場所)', theme: 'light', colors: { bg: '#fafaf7', chord: '#0a58c2', lyric: '#1c1c1c', bar: '#555b66', hl: '#ffe08a', hlChord: '#0b3b94', hlLyric: '#2b1d00', hlBar: '#5b4300', rngA: '#059669', rngB: '#2563eb', now: '#b3200a', nowFg: '#ffffff' } },
 ];
-const VIEW_DEFAULT = { sort: 'updated', group: 'none', style: 'standard', filter: 'all', tab: 'songs', fields: { artist: true, key: true, capo: true, bpm: false, tags: true, transpose: true } };
+const VIEW_DEFAULT = { sort: 'updated', group: 'none', style: 'standard', filter: 'all', tab: 'songs', fields: { artist: true, key: true, capo: true, bpm: false, tags: true, transpose: true, site: true } };
 settings.keys = { ...DEFAULT_KEYS, ...(settings.keys || {}) };
 settings.view = { ...VIEW_DEFAULT, ...(settings.view || {}), fields: { ...VIEW_DEFAULT.fields, ...((settings.view || {}).fields || {}) } };
 // 設定の同期: 端末ごとに違うもの(文字サイズ・開いているタブ)は除く。変えた時刻(cs.settingsAt)が新しい方を採用する
@@ -146,9 +146,19 @@ const GROUPS = {
   artist: (s) => [s.artist || '(アーティスト不明)'],
   initial: (s) => [initialOf(s)],
   key: (s) => [s.key || '(キー不明)'],
+  site: (s) => [siteOf(s)],
   tags: (s) => (tagsOf(s).length ? tagsOf(s) : ['(タグなし)']),
 };
 
+// 取り込み元のサイト名(曲のURLから判定)。URLがなければ「貼り付け」
+const SITES = [[/chordwiki\.org/, 'ChordWiki'], [/ufret\.jp/, 'U-FRET'], [/chord-rinne\.jp/, 'リンネ'], [/j-total\.net/, 'J-Total'], [/ultimate-guitar\.com/, 'Ultimate Guitar'], [/gakufu\.gakki\.me|gakki\.me/, 'ギタ譜'], [/piascore|print-gakufu/, 'ぷりんと楽譜']];
+function siteOf(s) {
+  const u = (s.url || '').trim();
+  if (!u) return '貼り付け・手入力';
+  const hit = SITES.find(([re]) => re.test(u));
+  if (hit) return hit[1];
+  try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return 'その他'; }
+}
 function songMeta(s) {
   const f = settings.view.fields;
   const parts = [];
@@ -169,6 +179,7 @@ function songItem(s) {
   const head = el('div', 'songhead');
   head.append(el('b', '', s.title || '無題'));
   if (s.practice) head.append(el('span', 'badge practice', '練習中'));
+  if (settings.view.fields.site) head.append(el('span', 'badge site', siteOf(s)));
   box.append(head);
   const m = songMeta(s);
   if (m) box.append(el('small', '', m));
@@ -239,7 +250,7 @@ let menuSong = null;
 function openSongMenu(s) {
   menuSong = s;
   $('#smTitle').textContent = s.title || '無題';
-  $('#smMeta').textContent = [s.artist, s.key && 'Key ' + s.key].filter(Boolean).join(' / ');
+  $('#smMeta').textContent = [s.artist, s.key && 'Key ' + s.key, '出典: ' + siteOf(s)].filter(Boolean).join(' / ');
   $('#smFav').textContent = s.fav ? '★ お気に入りを解除' : '☆ お気に入りに追加';
   $('#smPractice').textContent = s.practice ? '練習中を解除' : '練習中にする';
   $('#songMenu').showModal();
@@ -1446,7 +1457,7 @@ async function openSong(id, ctx = null) {
 
 function renderPlayer() {
   $('#pTitle').textContent = cur.title;
-  $('#pMeta').textContent = [cur.artist, cur.key && 'Key ' + (effTranspose() ? transposeChord(cur.key, effTranspose(), cur.accidental || 'auto') + '(原調 ' + cur.key + ')' : cur.key), effCapo() && 'Capo ' + effCapo()].filter(Boolean).join(' / ');
+  $('#pMeta').textContent = [cur.artist, cur.key && 'Key ' + (effTranspose() ? transposeChord(cur.key, effTranspose(), cur.accidental || 'auto') + '(原調 ' + cur.key + ')' : cur.key), effCapo() && 'Capo ' + effCapo(), siteOf(cur)].filter(Boolean).join(' / ');
   const tr = effTranspose();
   $('#trLabel').textContent = tr ? (tr > 0 ? '+' : '') + tr : '原調';
   $('#accBtn').textContent = ACC_LABEL[cur.accidental || 'auto'];

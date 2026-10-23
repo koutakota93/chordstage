@@ -33,7 +33,7 @@
         </select></label>
         <label>グループ<select id="vGroup">
           <option value="none">なし</option><option value="artist">アーティスト</option><option value="initial">頭文字</option>
-          <option value="key">キー</option><option value="tags">タグ</option><option value="status">印(お気に入り/練習中)</option>
+          <option value="key">キー</option><option value="site">出典サイト</option><option value="tags">タグ</option><option value="status">印(お気に入り/練習中)</option>
         </select></label>
         <label>絞り込み<select id="vFilter">
           <option value="all">すべて</option><option value="fav">★ お気に入り</option><option value="practice">練習中</option>
@@ -50,6 +50,7 @@
           <label class="chk"><input type="checkbox" data-vf="bpm"> BPM</label>
           <label class="chk"><input type="checkbox" data-vf="tags"> タグ</label>
           <label class="chk"><input type="checkbox" data-vf="transpose"> 移調</label>
+          <label class="chk"><input type="checkbox" data-vf="site"> 出典サイト</label>
         </div>
       </details>
       <ul id="songList"></ul>
