@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111827">
+<title>ChordStage</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="library" class="view">
+  <header class="bar">
+    <h1>ChordStage</h1>
+    <div class="sp"></div>
+    <button id="btnImport" class="primary">＋ 曲を追加</button>
+    <button id="btnBackup">バックアップ</button>
+    <button id="btnRefresh" title="アプリを最新の版に更新(曲は消えません)">↻ 更新</button>
+    <button class="themebtn"></button>
+    <button id="btnSettings">設定</button>
+  </header>
+  <div class="tabs"><button id="tabSongs" class="on">曲</button><button id="tabSets">セットリスト</button><button id="tabTrash">削除した曲</button></div>
+  <div class="libbody">
+    <div id="songsPane">
+      <input id="search" type="search" placeholder="曲名・アーティスト・タグで検索">
+      <div class="libtools">
+        <label>並び順<select id="vSort">
+          <option value="updated">更新が新しい順</option><option value="created">追加が新しい順</option>
+          <option value="fav">お気に入り優先</option><option value="title">曲名</option><option value="artist">アーティスト</option><option value="key">キー</option>
+        </select></label>
+        <label>グループ<select id="vGroup">
+          <option value="none">なし</option><option value="artist">アーティスト</option><option value="initial">頭文字</option>
+          <option value="key">キー</option><option value="tags">タグ</option><option value="status">印(お気に入り/練習中)</option>
+        </select></label>
+        <label>絞り込み<select id="vFilter">
+          <option value="all">すべて</option><option value="fav">★ お気に入り</option><option value="practice">練習中</option>
+        </select></label>
+        <label>表示<select id="vStyle">
+          <option value="standard">標準</option><option value="compact">コンパクト</option><option value="cards">カード</option>
+        </select></label>
+      </div>
+      <details class="fieldsel"><summary>表示する項目</summary>
+        <div class="fieldchecks">
+          <label class="chk"><input type="checkbox" data-vf="artist"> アーティスト</label>
+          <label class="chk"><input type="checkbox" data-vf="key"> キー</label>
+          <label class="chk"><input type="checkbox" data-vf="capo"> カポ</label>
+          <label class="chk"><input type="checkbox" data-vf="bpm"> BPM</label>
+          <label class="chk"><input type="checkbox" data-vf="tags"> タグ</label>
+          <label class="chk"><input type="checkbox" data-vf="transpose"> 移調</label>
+        </div>
+      </details>
+      <ul id="songList"></ul>
+      <p id="emptyMsg" class="hint"></p>
+      <p class="hint">曲のカードをタップすると開きます。右端の「⋯」で、変更・セットへ追加・複製・削除などのメニューが出ます。削除した曲は「削除した曲」タブに移り、あとで戻せます。</p>
+    </div>
+    <div id="trashPane" class="hidden">
+      <div class="row"><button id="trashAll" class="danger hidden">すべて完全に削除</button></div>
+      <ul id="trashList"></ul>
+      <p id="trashEmpty" class="hint"></p>
+    </div>
+    <div id="setsPane" class="hidden">
+      <div class="row"><button id="setNew" class="primary">＋ 新しいセットリスト</button></div>
+      <ul id="setList"></ul>
+      <p id="setEmpty" class="hint"></p>
+    </div>
+  </div>
+</div>
+
+<div id="setView" class="view hidden">
+  <header class="bar">
+    <button id="svBack">← 一覧</button>
+    <div class="title"><b id="svTitle"></b><span id="svMeta"></span></div>
+    <div class="sp"></div>
+    <button id="svAdd" class="primary">＋ 曲を追加</button>
+    <button id="svSelect" title="複数の曲を選んで、担当をまとめて設定">選択</button>
+    <button id="svRename">名前変更</button>
+    <button id="svDelete" class="danger">削除</button>
+  </header>
+  <div class="libbody">
+    <div id="svMembers"></div>
+    <ol id="svList"></ol>
+    <p id="svEmpty" class="hint"></p>
+  </div>
+  <div id="svBar" class="svbar hidden">
+    <span id="svCount"></span>
+    <button id="svSelAll">全選択/解除</button>
+    <button id="svBulk" class="primary">担当を一括設定</button>
+    <button id="svBulkReset" title="選んだ曲の担当の指定を消す">指定を消す</button>
+    <button id="svDone">完了</button>
+  </div>
+</div>
+
+<div id="player" class="view hidden">
+  <header class="bar">
+    <button id="btnBack">← 一覧</button>
+    <button id="prevSong" class="hidden" title="セットリストの前の曲">‹ 前の曲</button>
+    <button id="nextSong" class="hidden" title="セットリストの次の曲">次の曲 ›</button>
+    <div class="title"><b id="pTitle"></b><span id="pMeta"></span></div>
+    <div class="sp"></div>
+    <div class="group" title="移調">
+      <button id="trDown">♭</button><span id="trLabel">原調</span><button id="trUp">♯</button><button id="accBtn" title="移調後の表記: 自動 / ♯優先 / ♭優先">表記:自動</button>
+    </div>
+    <div class="group fsgroup" title="文字サイズ(横幅にどれだけ入るか)">
+      <button id="fsDown">A−</button><button id="fsFit" title="一番長い行が横幅に収まる大きさにする">幅</button><button id="fsUp">A＋</button>
+    </div>
+    <div class="group" title="一度にハイライトする行数">
+      <button id="grDown">−</button><span id="grLabel">1行</span><button id="grUp">＋</button>
+    </div>
+    <button id="btnMemoMode">メモ</button>
+    <button id="btnInfo">情報</button>
+    <button id="btnRange" title="歌詞の色の区切りの表示/非表示">区切り</button>
+    <button class="themebtn"></button>
+    <button id="btnSettings2">設定</button>
+    <button id="btnFocus" title="上下のバーを隠して譜面を最大化">全画面</button>
+  </header>
+  <button id="btnUnfocus" class="hidden" title="バーを戻す">☰</button>
+  <div class="stage">
+    <div id="score"></div>
+    <nav id="minimap"></nav>
+  </div>
+  <footer class="ctl">
+    <div class="transport">
+      <button id="btnPrev" class="big">◀ 前</button>
+      <button id="btnPlay" class="big play hidden">▶ 開始</button>
+      <button id="btnNext" class="big primary">次 ▶</button>
+    </div>
+    <div class="modebox">
+      <div class="seg2">
+        <button id="modeManual" class="on">手動</button><button id="modeAuto">自動</button>
+      </div>
+      <div class="bpm hidden" id="bpmBox">
+        <button data-d="-5">−5</button><button data-d="-1">−1</button>
+        <span><b id="bpmVal">100</b> BPM</span>
+        <button data-d="1">+1</button><button data-d="5">+5</button>
+        <button id="tapTempo" title="曲に合わせて続けてタップすると、BPMを決めます">TAP</button>
+      </div>
+    </div>
+  </footer>
+</div>
+
+<dialog id="songMenu">
+  <form method="dialog">
+    <h3 id="smTitle"></h3>
+    <p class="hint" id="smMeta"></p>
+    <div class="menulist">
+      <button type="button" id="smOpen">開く</button>
+      <button type="button" id="smFav"></button>
+      <button type="button" id="smPractice"></button>
+      <button type="button" id="smRename">名前・アーティスト・タグを変更</button>
+      <button type="button" id="smSet">セットリストに追加</button>
+      <button type="button" id="smDup">複製</button>
+      <button type="button" id="smDelete" class="danger">削除(削除した曲へ移動)</button>
+    </div>
+    <div class="row end"><button value="close">閉じる</button></div>
+  </form>
+</dialog>
+
+<dialog id="memDlg">
+  <form method="dialog">
+    <h3 id="mdTitle"></h3>
+    <p class="hint" id="mdHint"></p>
+    <div id="mdChips"></div>
+    <div class="mdadd">
+      <b>メンバー表に追加</b>
+      <div class="mdaddrow"><select id="mdPart"></select><input id="mdName" placeholder="名前"><button type="button" id="mdAddNew">追加</button></div>
+    </div>
+    <div class="row end"><button type="button" id="mdReset">指定を消す</button><button type="button" id="mdSave" class="primary">保存</button></div>
+  </form>
+</dialog>
+
+<dialog id="keyDlg">
+  <form method="dialog">
+    <h3>キー・カポ(このセットリストだけ)</h3>
+    <p class="hint" id="kdSong"></p>
+    <div class="row">
+      <button type="button" id="kdDown">♭ −1</button>
+      <b id="kdTr" class="kdtr">原調</b>
+      <button type="button" id="kdUp">♯ +1</button>
+    </div>
+    <p class="hint" id="kdResult"></p>
+    <label>カポ<input id="kdCapo" type="number" min="0" max="12"></label>
+    <p class="hint">曲本体の設定は変わりません。このセットリストから開いたときだけ、ここで決めたキー・カポで表示します。</p>
+    <div class="row end"><button type="button" id="kdReset">曲の設定に戻す</button><button type="button" id="kdSave" class="primary">保存</button></div>
+  </form>
+</dialog>
+
+<dialog id="renameDlg">
+  <form method="dialog">
+    <h3>曲の情報を変更</h3>
+    <label>曲名<input id="rnTitle"></label>
+    <label>アーティスト<input id="rnArtist"></label>
+    <label>タグ(カンマ区切り。例: ライブ,バラード)<input id="rnTags"></label>
+    <div class="row end"><button value="cancel">キャンセル</button><button type="button" id="rnSave" class="primary">保存</button></div>
+  </form>
+</dialog>
+
+<dialog id="nameDlg">
+  <form method="dialog">
+    <h3 id="ndTitle"></h3>
+    <label>名前<input id="ndName" placeholder="例: 2026秋ライブ"></label>
+    <label>本番の日付(任意・カレンダーから選択)<input id="ndDate" type="date"></label>
+    <div class="membersbox">
+      <b>メンバー表(パートごとに、複数人を登録できます。曲ごとに、この中から選びます)</b>
+      <div id="ndMembers"></div>
+      <div class="row"><button type="button" id="ndAddMember">＋ 担当を追加</button></div>
+    </div>
+    <div class="row end"><button value="cancel">キャンセル</button><button type="button" id="ndSave" class="primary">保存</button></div>
+  </form>
+</dialog>
+
+<dialog id="addSetDlg">
+  <form method="dialog">
+    <h3>セットリストに追加</h3>
+    <p class="hint" id="asSong"></p>
+    <ul id="asList" class="gdlist"></ul>
+    <div class="row"><button type="button" id="asNew">＋ 新しいセットリストを作って追加</button></div>
+    <div class="row end"><button value="close">閉じる</button></div>
+  </form>
+</dialog>
+
+<dialog id="pickDlg">
+  <form method="dialog">
+    <h3>曲を追加</h3>
+    <input id="pkSearch" type="search" placeholder="曲名・アーティストで検索" class="pksearch">
+    <ul id="pkList" class="pklist"></ul>
+    <div class="row end"><button value="cancel">キャンセル</button><button type="button" id="pkAdd" class="primary">選んだ曲を追加</button></div>
+  </form>
+</dialog>
+
+<dialog id="syncDlg">
+  <form method="dialog">
+    <h3 id="sdHead">同期が完了しました</h3>
+    <p class="hint" id="sdSub"></p>
+    <div class="tiles">
+      <div class="tile add"><b id="sdAdd">0</b><span>追加</span></div>
+      <div class="tile upd"><b id="sdUpd">0</b><span>更新</span></div>
+      <div class="tile del" id="sdDelTile"><b id="sdDel">0</b><span>削除の確認</span></div>
+      <div class="tile save" id="sdSaveTile"><b id="sdSave">0</b><span id="sdSaveLabel">保存</span></div>
+    </div>
+    <div id="sdLists"></div>
+    <div id="sdPending" class="pending hidden">
+      <h4>他の端末で削除された曲</h4>
+      <p class="hint">残したい曲にだけ、チェックを入れてください。チェックしていない曲は、下のボタン1つでまとめて削除します。</p>
+      <div class="row"><button type="button" id="sdAll">すべてチェック(残す)</button><button type="button" id="sdNone">すべて外す</button></div>
+      <ul id="sdPendList" class="pklist"></ul>
+      <button type="button" id="sdDecide" class="big wide"></button>
+    </div>
+    <p id="sdPendDone" class="sdpenddone hidden"></p>
+    <div class="row end"><button value="close" class="primary">閉じる</button></div>
+  </form>
+</dialog>
+
+<dialog id="importDlg">
+  <form method="dialog" id="importForm">
+    <h3 id="importHead">曲を追加</h3>
+    <div class="steps">
+      <b>コード譜サイトの曲を追加する</b>
+      <div class="row">
+        <label>探すサイト<select id="iSite"><option value="chordwiki.org">ChordWiki</option><option value="ufret.jp">U-フレット</option><option value="j-total.net">J-Total</option><option value="chord-rinne.jp">リンネのコードブック</option></select></label>
+        <label>曲名・アーティスト<input id="iQuery" type="search" placeholder="例: 三文小説 King Gnu"></label>
+        <button type="button" id="iSearch" class="primary">検索</button>
+      </div>
+      <div class="row"><button type="button" id="iOpenCW">ChordWikiを別ウィンドウで開く</button></div>
+      <p class="hint">対応: ChordWiki(「編集」のソース)/ U-フレット / リンネのコードブック(表示中のコード譜)/ J-Total・ほかのサイト(譜面の文字を選択してから押す)</p>
+      <ol class="hint">
+        <li>コード譜サイトの曲のページを開く(ChordWikiは別ウィンドウで開くと、2画面で並べて操作できます)</li>
+        <li>ブックマーク「→ChordStage」を押す(下の初回設定を参照)。このアプリに自動で追加され、ChordWikiの画面はそのまま残ります</li>
+      </ol>
+      <details>
+        <summary>初回だけ: ブックマークを作る</summary>
+        <ol class="hint">
+          <li>下の「コードをコピー」を押す</li>
+          <li>Chromeで任意のページをブックマークに追加し、ブックマークを編集して、名前を「→ChordStage」、URLを貼り付けたコードに変える</li>
+          <li>使うとき: コード譜サイトの曲ページで、アドレスバーに「→ChordStage」と入力し、候補に出るブックマークを選ぶ</li>
+        </ol>
+        <div class="row">
+          <button type="button" id="bmCopy">コードをコピー</button>
+          <a id="bmLink" href="#" class="hint">→ChordStage(PCではこのリンクをブックマークバーにドラッグ)</a>
+        </div>
+        <textarea id="bmText" rows="2" readonly class="hidden"></textarea>
+      </details>
+    </div>
+    <details>
+      <summary>うまくいかない場合: 手動で貼り付ける</summary>
+      <p class="hint">ChordWikiの「編集」画面のソースを全選択してコピーし、このアプリに戻ると自動で貼り付けます。貼り付かない場合は「クリップボードから貼り付け」を押してください。</p>
+    </details>
+    <label>曲名<input id="iTitle"></label>
+    <label>アーティスト<input id="iArtist"></label>
+    <label>ChordWikiのURL(任意)<input id="iUrl" type="url" placeholder="https://ja.chordwiki.org/wiki/..."></label>
+    <div class="row">
+      <button type="button" id="iPaste">クリップボードから貼り付け</button>
+      <label class="filebtn">ファイル/PDFから<input id="iFile" type="file" accept=".txt,.cho,.crd,.chopro,.pdf,application/pdf,text/plain" hidden></label>
+    </div>
+    <textarea id="iText" rows="10" placeholder="ここにコード譜を貼り付け"></textarea>
+    <p id="iInfo" class="hint"></p>
+    <div class="row end">
+      <button value="cancel">キャンセル</button>
+      <button type="button" id="iSave" class="primary">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="infoDlg">
+  <form method="dialog">
+    <h3>曲情報</h3>
+    <label>曲名<input id="fTitle"></label>
+    <label>アーティスト<input id="fArtist"></label>
+    <div class="row">
+      <label>キー<input id="fKey" size="4"></label>
+      <label>カポ<input id="fCapo" type="number" min="0" max="12"></label>
+      <label>BPM<input id="fBpm" type="number" min="30" max="300"><button type="button" id="fTap" class="taplink">TAP(曲に合わせてタップ)</button></label>
+      <label>まとめ行数<input id="fGroup" type="number" min="1" max="8"></label>
+    </div>
+    <label>曲メモ(演奏全体の注意など)<textarea id="fMemo" rows="4"></textarea></label>
+    <label>タグ(カンマ区切り)<input id="fTags"></label>
+    <label>ChordWikiのURL<input id="fUrl" type="url"></label>
+    <div class="row">
+      <button type="button" id="fOpenWeb">ChordWikiを開く</button>
+      <button type="button" id="fEditText">譜面テキストを編集</button>
+      <button type="button" id="fDelete" class="danger">この曲を削除</button>
+    </div>
+    <div class="row end">
+      <button value="cancel">閉じる</button>
+      <button type="button" id="fSave" class="primary">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="memoDlg">
+  <form method="dialog">
+    <h3>演奏メモ</h3>
+    <p class="hint" id="memoLine"></p>
+    <div id="memoTags" class="chips"></div>
+    <textarea id="mText" rows="3" placeholder="例: ここでブレイク / 2回目は半分の音量"></textarea>
+    <div class="row end">
+      <button type="button" id="mDelete" class="danger">削除</button>
+      <button value="cancel">キャンセル</button>
+      <button type="button" id="mSave" class="primary">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="settingsDlg">
+  <form method="dialog">
+    <h3>設定</h3>
+    <label>文字サイズ <output id="oFont"></output><input id="sFont" type="range" min="12" max="60" step="1"></label>
+    <label>歌詞の区切りの形<select id="sRangeStyle"></select></label>
+    <label class="chk"><input id="sBeatSync" type="checkbox"> リズムの長さで幅を揃える(小節線が行ごとに揃います)</label>
+    <label>1拍の幅 <output id="oBeat"></output><input id="sBeatEm" type="range" min="1" max="4" step="0.1"></label>
+    <label>歌詞の大きさ <output id="oLyric"></output><input id="sLyric" type="range" min="0.7" max="1.5" step="0.05"></label>
+    <label>コードの大きさ <output id="oChord"></output><input id="sChord" type="range" min="0.6" max="1.4" step="0.05"></label>
+    <label>テーマ
+      <select id="sTheme"><option value="dark">ダーク(ステージ向け)</option><option value="light">ライト</option></select>
+    </label>
+    <label>自動モード: 1コードあたりの拍数(まとまり内のコード数×この拍数で進みます)<input id="sBeats" type="number" min="1" max="16"></label>
+    <label class="chk"><input id="sFollow" type="checkbox"> 曲中のテンポ変化に従う(自動モード)</label>
+    <label class="chk"><input id="sCountIn" type="checkbox"> 開始前にカウントイン(4拍)</label>
+    <label class="chk"><input id="sClick" type="checkbox"> クリック音を鳴らす</label>
+    <label class="chk"><input id="sTap" type="checkbox"> 譜面をタップしてその位置へジャンプ</label>
+    <fieldset class="syncbox">
+      <legend>色</legend>
+      <label>プリセット(選んだあと、下で1色ずつ直せます)<select id="sPreset"></select></label>
+      <div class="row"><button type="button" id="presetSave">今の色を「自分用」に保存</button></div>
+      <div class="colors">
+        <label>コード<input type="color" data-ck="chord"></label>
+        <label>歌詞<input type="color" data-ck="lyric"></label>
+        <label>小節線<input type="color" data-ck="bar"></label>
+        <label>背景<input type="color" data-ck="bg"></label>
+        <label>ハイライトの背景<input type="color" data-ck="hl"></label>
+        <label>ハイライト中のコード<input type="color" data-ck="hlChord"></label>
+        <label>ハイライト中の歌詞<input type="color" data-ck="hlLyric"></label>
+        <label>ハイライト中の小節線<input type="color" data-ck="hlBar"></label>
+        <label>コードの区切り(1つ目)<input type="color" data-ck="rngA"></label>
+        <label>コードの区切り(2つ目)<input type="color" data-ck="rngB"></label>
+        <label>自動: いま追うコード(背景)<input type="color" data-ck="now"></label>
+        <label>自動: いま追うコード(文字)<input type="color" data-ck="nowFg"></label>
+      </div>
+      <div class="row"><button type="button" id="colorReset">色を初期値に戻す</button></div>
+    </fieldset>
+    <div class="row"><button type="button" id="btnRefresh2">↻ アプリを最新の版に更新</button></div>
+    <fieldset class="syncbox">
+      <legend>ペダル・キーの割り当て</legend>
+      <p class="hint">「＋ 割り当て」を押してから、ペダルを踏む(またはキーを押す)と、その信号を動作に割り当てます。</p>
+      <div id="keyMap"></div>
+      <div class="row"><button type="button" id="keyReset">初期設定に戻す</button></div>
+    </fieldset>
+    <p class="hint">ペダル/キーボード: → ↓ PageDown Enter で次へ、← ↑ PageUp で前へ。自動モードでは Space で開始/停止。</p>
+    <div class="row end"><button value="close" class="primary">閉じる</button></div>
+  </form>
+</dialog>
+
+<dialog id="backupDlg">
+  <form method="dialog">
+    <h3>バックアップ / 復元</h3>
+    <fieldset class="syncbox">
+      <legend>Googleドライブ</legend>
+      <p id="gdState" class="hint"></p>
+      <div class="row">
+        <button type="button" id="gdSync" class="primary big">ドライブと同期(1クリック)</button>
+      </div>
+      <p class="hint">ドライブの最新の内容を反映してから、端末の内容を保存します。曲・メモ・セットリストが対象です。</p>
+      <details>
+        <summary>個別の操作(履歴つきバックアップ)</summary>
+        <div class="row">
+          <button type="button" id="gdBackup">ドライブへバックアップ</button>
+          <button type="button" id="gdRestore">ドライブから取り込み</button>
+        </div>
+        <ul id="gdList" class="gdlist"></ul>
+      </details>
+      <details>
+        <summary>初回設定(クライアントIDの登録)</summary>
+        <ol class="hint">
+          <li>Google Cloud コンソールでプロジェクトを作り、「Google Drive API」を有効にする</li>
+          <li>OAuth 同意画面を設定(外部)し、自分のGoogleアカウントを「テストユーザー」に追加する</li>
+          <li>「認証情報」→「OAuth クライアントID」→ 種類は「ウェブ アプリケーション」。「承認済みの JavaScript 生成元」にこのアプリのURL(https://…netlify.app)を追加</li>
+          <li>表示された「クライアントID」を下に貼り付けて保存する</li>
+        </ol>
+        <label>クライアントID<input id="gdClientId" placeholder="123456-abc.apps.googleusercontent.com"></label>
+        <label>フォルダ名<input id="gdFolder" placeholder="ChordStage"></label>
+        <div class="row"><button type="button" id="gdSaveCfg">保存</button></div>
+      </details>
+    </fieldset>
+    <fieldset class="syncbox">
+      <legend>ファイル(設定不要)</legend>
+      <div class="row">
+        <button type="button" id="fileExport">ファイルに書き出す</button>
+        <button type="button" id="fileShare">共有(ドライブアプリ等へ)</button>
+        <button type="button" id="fileImport">ファイルから取り込む</button>
+      </div>
+    </fieldset>
+    <div class="row end"><button value="close" class="primary">閉じる</button></div>
+  </form>
+</dialog>
+
+<div id="toast" popover="manual" class="hidden"></div>
+<input id="restoreFile" type="file" accept=".json,.txt,application/json,text/plain" hidden>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
