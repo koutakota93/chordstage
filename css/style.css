@@ -410,3 +410,7 @@ li.swp.open .swact { box-shadow: -8px 0 12px -8px #0008; }
 }
 @media (max-width: 700px) { .tabs button { white-space: nowrap; padding-left: 6px; padding-right: 6px; font-size: 15px; } }
 .badge.site { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--fg); font-weight: 600; }
+/* コードの横のリズム表記: 少し大きく・太く、薄い地を敷いて、コードの邪魔をしない程度に目立たせる */
+.ch .rhy { font-size: .8em; font-weight: 700; letter-spacing: .06em; margin-left: .25em; padding: 0 .3em; border-radius: .3em;
+  color: color-mix(in srgb, var(--chord) 45%, var(--lyric)); background: color-mix(in srgb, var(--chord) 16%, transparent); vertical-align: .05em; }
+.blk.cur .ch .rhy { color: var(--hl-chord); background: color-mix(in srgb, var(--hl-chord) 14%, transparent); }
