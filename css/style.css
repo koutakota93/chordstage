@@ -398,3 +398,6 @@ li.swp.open .swact { box-shadow: -8px 0 12px -8px #0008; }
 #svList li { transition: none; }
 #svList li .ord { flex: none; min-width: 34px; height: 34px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; border: 2px dashed var(--line); color: transparent; }
 #svList li .ord.on { background: var(--accent); color: var(--accent-fg); border: 2px solid var(--accent); }
+
+#syncChip{font-size:.8rem;padding:.35em .7em}
+#syncChip.warn{background:#facc15;color:#2b1d00;border-color:#facc15}

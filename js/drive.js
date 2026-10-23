@@ -24,28 +24,41 @@ export function loadGis() {
   return gis;
 }
 
+// アクセストークン(1時間有効)は端末に覚えておき、アプリを開き直しても、期限内ならログインを求めない
 let token = null;
 let tokenExp = 0;
-// アクセストークンを取得する(初回や期限切れのときだけ、Googleの同意ポップアップが出る)
-export async function getToken() {
-  if (token && Date.now() < tokenExp - 60000) return token;
-  const { clientId } = getConfig();
-  if (!clientId) throw new Error('クライアントIDが未設定です');
-  await loadGis();
-  return new Promise((resolve, reject) => {
+try { const t = JSON.parse(localStorage.getItem('cs.gtoken') || 'null'); if (t && t.exp > Date.now() + 60000) { token = t.t; tokenExp = t.exp; } } catch {}
+export const hasToken = () => !!token && Date.now() < tokenExp - 60000;
+const remember = () => { try { localStorage.setItem('cs.gtoken', JSON.stringify({ t: token, exp: tokenExp })); } catch {} };
+// アクセストークンを取得する。同意済みのアカウントなら prompt:'' で、ポップアップは一瞬で閉じる(画面タップの直後に呼ぶ必要がある)
+let pending = null;
+export function getToken() {
+  if (hasToken()) return Promise.resolve(token);
+  if (pending) return pending;
+  const { clientId, hint } = getConfig();
+  if (!clientId) return Promise.reject(new Error('クライアントIDが未設定です'));
+  pending = loadGis().then(() => new Promise((resolve, reject) => {
+    const fail = (msg, code) => { const e = new Error(msg); e.code = code; reject(e); };
     const client = window.google.accounts.oauth2.initTokenClient({
       client_id: clientId,
       scope: SCOPE,
+      prompt: '',
+      ...(hint ? { hint } : {}),
       callback: (r) => {
-        if (r.error) return reject(new Error('ログインに失敗しました: ' + r.error + (r.error_description ? ' ' + r.error_description : '')));
+        if (r.error) return fail('ログインに失敗しました: ' + r.error + (r.error_description ? ' ' + r.error_description : ''), 'auth');
         token = r.access_token;
         tokenExp = Date.now() + (r.expires_in || 3600) * 1000;
+        remember();
+        saveConfig({ authed: true });
         resolve(token);
+        if (!hint) fetch(API + 'about?fields=user(emailAddress)', { headers: { Authorization: 'Bearer ' + token } })
+          .then((x) => x.json()).then((j) => { if (j.user && j.user.emailAddress) saveConfig({ hint: j.user.emailAddress }); }).catch(() => {});
       },
-      error_callback: (e) => reject(new Error('ログインできませんでした(' + (e.type || 'popup') + ')。ポップアップが許可されているか確認してください')),
+      error_callback: (e) => fail('ログインできませんでした(' + (e.type || 'popup') + ')。ポップアップが許可されているか確認してください', 'popup'),
     });
     client.requestAccessToken({});
-  });
+  })).finally(() => { pending = null; });
+  return pending;
 }
 
 async function call(url, opts = {}) {
@@ -54,7 +67,7 @@ async function call(url, opts = {}) {
   if (!res.ok) {
     let msg = res.status + '';
     try { const j = await res.json(); msg = (j.error && (j.error.message || j.error.status)) || msg; } catch {}
-    if (res.status === 401) token = null;
+    if (res.status === 401) { token = null; try { localStorage.removeItem('cs.gtoken'); } catch {} }
     throw new Error('Googleドライブのエラー: ' + msg);
   }
   return res;
@@ -104,18 +117,21 @@ export async function download(id) {
 
 // ---- 1クリック同期: フォルダ内の「chordstage-sync.json」を読み込み、アプリ側で端末と統合し、統合後の内容を同じファイルへ保存する
 const SYNC_NAME = 'chordstage-sync.json';
+const bare = (t) => t.replace(/"exportedAt":"[^"]*",?/, '');
 export async function sync(mergeIncoming, buildPayload) {
   const folder = await ensureFolder();
   const q = `name='${SYNC_NAME}' and '${folder}' in parents and trashed=false`;
   const found = await (await call(API + 'files?fields=files(id)&q=' + encodeURIComponent(q))).json();
   const id = found.files && found.files[0] && found.files[0].id;
-  let incoming = null;
+  let remoteText = '';
   if (id) {
-    incoming = await (await call(API + 'files/' + id + '?alt=media')).json();
-    await mergeIncoming(incoming);
+    remoteText = await (await call(API + 'files/' + id + '?alt=media')).text();
+    await mergeIncoming(JSON.parse(remoteText));
   }
   const content = JSON.stringify(buildPayload());
-  if (id) {
+  let uploaded = true;
+  if (id && bare(remoteText) === bare(content)) uploaded = false; // 変更がなければ、書き込まない
+  else if (id) {
     await call('https://www.googleapis.com/upload/drive/v3/files/' + id + '?uploadType=media', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -130,5 +146,5 @@ export async function sync(mergeIncoming, buildPayload) {
       body,
     });
   }
-  return { existed: !!id, folder: folderName() };
+  return { existed: !!id, folder: folderName(), uploaded };
 }

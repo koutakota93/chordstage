@@ -16,6 +16,7 @@
     <h1>ChordStage</h1>
     <div class="sp"></div>
     <button id="btnImport" class="primary">＋ 曲を追加</button>
+    <button id="syncChip" class="hidden" title="Googleドライブとの自動同期の状態(押すと今すぐ同期)"></button>
     <button id="btnBackup">バックアップ</button>
     <button id="btnRefresh" title="アプリを最新の版に更新(曲は消えません)">↻ 更新</button>
     <button class="themebtn"></button>
@@ -399,10 +400,11 @@
     <fieldset class="syncbox">
       <legend>Googleドライブ</legend>
       <p id="gdState" class="hint"></p>
+      <label class="chk"><input type="checkbox" id="gdAuto"> 自動で同期する(起動時・変更したあと・5分おき)</label>
       <div class="row">
         <button type="button" id="gdSync" class="primary big">ドライブと同期(1クリック)</button>
       </div>
-      <p class="hint">ドライブの最新の内容を反映してから、端末の内容を保存します。曲・メモ・セットリストが対象です。</p>
+      <p class="hint">ドライブの最新の内容を反映してから、端末の内容を保存します。曲・メモ・セットリストに加えて、表示や色などの設定も対象です(文字サイズだけは端末ごと)。</p>
       <details>
         <summary>個別の操作(履歴つきバックアップ)</summary>
         <div class="row">

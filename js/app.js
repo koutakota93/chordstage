@@ -32,6 +32,10 @@ const PRESETS = [
 const VIEW_DEFAULT = { sort: 'updated', group: 'none', style: 'standard', filter: 'all', tab: 'songs', fields: { artist: true, key: true, capo: true, bpm: false, tags: true, transpose: true } };
 settings.keys = { ...DEFAULT_KEYS, ...(settings.keys || {}) };
 settings.view = { ...VIEW_DEFAULT, ...(settings.view || {}), fields: { ...VIEW_DEFAULT.fields, ...((settings.view || {}).fields || {}) } };
+// 設定の同期: 端末ごとに違うもの(文字サイズ・開いているタブ)は除く。変えた時刻(cs.settingsAt)が新しい方を採用する
+const syncSettings = () => { const { fontSize, ...r } = settings; const { tab, ...v } = settings.view || {}; return { ...r, view: v }; };
+let lastSettingsStr = JSON.stringify(syncSettings());
+const getSettingsAt = () => Number(localStorage.getItem('cs.settingsAt') || 0);
 const RANGE_STYLES = [['bracket', '括弧(上と左)'], ['box', '四角い枠'], ['fill', '色で塗る'], ['under', '下線'], ['left', '左の縦線だけ']];
 function applyRangeClass() {
   const sc = document.querySelector('#score');
@@ -53,6 +57,25 @@ function applySettings() {
     if (c) document.documentElement.style.setProperty(v, c); else document.documentElement.style.removeProperty(v);
   });
   try { localStorage.setItem('cs.settings', JSON.stringify(settings)); } catch {}
+  const str = JSON.stringify(syncSettings());
+  if (str !== lastSettingsStr) {
+    lastSettingsStr = str;
+    try { localStorage.setItem('cs.settingsAt', String(Date.now())); } catch {}
+    if (typeof scheduleSync === 'function') scheduleSync();
+  }
+}
+// ほかの端末の設定を、この端末へ反映する
+function adoptSettings(inc) {
+  const keep = { fontSize: settings.fontSize, tab: settings.view.tab };
+  Object.keys(settings).forEach((k) => delete settings[k]);
+  Object.assign(settings, defaults, inc);
+  settings.keys = { ...DEFAULT_KEYS, ...(settings.keys || {}) };
+  settings.view = { ...VIEW_DEFAULT, ...(settings.view || {}), fields: { ...VIEW_DEFAULT.fields, ...((settings.view || {}).fields || {}) }, tab: keep.tab };
+  settings.fontSize = keep.fontSize;
+  lastSettingsStr = JSON.stringify(syncSettings());
+  applySettings();
+  updateAutoFitBtn();
+  if (!$('#player').classList.contains('hidden')) refit();
 }
 
 // ダイアログ(モーダル)の上にも出せるよう、ポップオーバー(最前面)で表示する
@@ -83,7 +106,7 @@ function toast(msg) {
 // library(曲/セットリスト一覧) / setView(セットリストの中身) / player(譜面)
 function showView(name) {
   ['library', 'setView', 'player'].forEach((id) => $('#' + id).classList.toggle('hidden', id !== name));
-  if (name !== 'player') { stopAuto(); releaseAwake(); }
+  if (name !== 'player') { stopAuto(); releaseAwake(); if (pendingSync) setTimeout(() => autoSync('later'), 1500); }
 }
 
 // ---------- 削除の記録(同期で、消した曲が復活しないように) ----------
@@ -1070,6 +1093,11 @@ async function mergeIncoming(data) {
     if (tombNew[x.id] && tombNew[x.id] >= (x.updatedAt || 0)) rep.pendingSets.push(x);
     else if (dead(x)) await db.deleteSetlist(x.id);
   }
+  if (data.settings && typeof data.settings === 'object' && (data.settingsAt || 0) > getSettingsAt()) {
+    adoptSettings(data.settings);
+    try { localStorage.setItem('cs.settingsAt', String(data.settingsAt)); } catch {}
+    rep.settings = true;
+  }
   await loadLibrary();
   syncCtx = { ...rep, viaDrive: false };
   return rep;
@@ -1082,6 +1110,7 @@ const payload = () => {
     songs: [...songs, ...trash].filter((x) => !pend.has(x.id)),
     setlists: setlists.filter((x) => !pend.has(x.id)),
     deleted: mergeTomb(getTomb(), syncCtx ? syncCtx.tombNew : {}),
+    settings: syncSettings(), settingsAt: getSettingsAt(),
   };
 };
 const backupJson = () => JSON.stringify(payload(), null, 1);
@@ -1094,6 +1123,7 @@ function updateDriveUi() {
   $('#gdBackup').disabled = !ok;
   $('#gdRestore').disabled = !ok;
   $('#gdSync').disabled = !ok;
+  $('#gdAuto').checked = drive.getConfig().auto !== false;
   $('#gdClientId').value = drive.getConfig().clientId || '';
   $('#gdFolder').value = drive.getConfig().folderName || 'ChordStage';
 }
@@ -1103,6 +1133,7 @@ $('#btnBackup').onclick = () => {
   $('#backupDlg').showModal();
   if (drive.isConfigured()) drive.loadGis().catch(() => {}); // ポップアップがブロックされないよう、先に読み込んでおく
 };
+$('#gdAuto').onchange = () => { drive.saveConfig({ auto: $('#gdAuto').checked }); updateSyncChip(); if ($('#gdAuto').checked) autoSync('tap'); };
 $('#gdSaveCfg').onclick = () => {
   const id = $('#gdClientId').value.trim();
   if (!/\.apps\.googleusercontent\.com$/.test(id)) return toast('クライアントIDは「…apps.googleusercontent.com」の形式です');
@@ -1110,18 +1141,83 @@ $('#gdSaveCfg').onclick = () => {
   updateDriveUi();
   toast('保存しました');
   drive.loadGis().catch(() => {});
+  updateSyncChip();
 };
 // 1クリック同期: ドライブの最新を反映 → 統合した内容をドライブへ保存 → 結果を画面で見せる
 async function runDriveSync() {
   syncCtx = null;
   let rep = emptyReport();
-  const res = await drive.sync(async (incoming) => { if (incoming && incoming.app === 'chordstage') rep = await mergeIncoming(incoming); }, payload);
-  if (syncCtx) syncCtx.viaDrive = true;
-  return { rep, res };
+  syncing = true;
+  try {
+    const res = await drive.sync(async (incoming) => { if (incoming && incoming.app === 'chordstage') rep = await mergeIncoming(incoming); }, payload);
+    if (syncCtx) syncCtx.viaDrive = true;
+    lastSyncAt = Date.now();
+    needTap = false;
+    return { rep, res };
+  } finally { syncing = false; updateSyncChip(); }
 }
+
+// ---- 自動同期: 起動時・変更したあと・アプリに戻ったとき・5分おきに、裏で同期する ----
+// Googleのログインは、期限(1時間)が切れたあとの最初の画面タップで、一瞬だけ自動で更新される(ボタンを押し直す必要はない)
+let syncing = false, needTap = false, lastSyncAt = 0, syncTimer = null, pendingSync = false, lastRep = null, lastErr = '';
+const syncOn = () => drive.isConfigured() && drive.getConfig().auto !== false;
+function updateSyncChip() {
+  const b = $('#syncChip');
+  b.classList.toggle('hidden', !syncOn());
+  const pend = lastRep ? lastRep.pendingSongs.length + lastRep.pendingSets.length : 0;
+  let t = '☁ ';
+  if (syncing) t += '同期中…';
+  else if (pend) t += `削除の確認 ${pend}件`;
+  else if (needTap) t += '画面をタップで再接続';
+  else if (lastErr) t += '同期できません';
+  else if (lastSyncAt) t += '同期済み ' + new Date(lastSyncAt).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+  else t += '同期待ち';
+  b.textContent = t;
+  b.classList.toggle('warn', !syncing && (needTap || !!lastErr || !!pend));
+}
+function scheduleSync() {
+  if (!syncOn()) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => autoSync('change'), 4000);
+}
+async function autoSync(reason) {
+  if (!syncOn() || syncing || !navigator.onLine) return;
+  if (!$('#player').classList.contains('hidden') && reason !== 'tap') { pendingSync = true; return; } // 演奏中は裏の通信を控え、一覧へ戻ってから
+  if (!drive.hasToken() && reason !== 'tap') { // 期限切れ: 次の画面タップでログインを更新する
+    needTap = true; updateSyncChip();
+    document.addEventListener('pointerdown', () => autoSync('tap'), { capture: true, once: true });
+    return;
+  }
+  pendingSync = false;
+  try {
+    lastErr = '';
+    await drive.getToken();
+    updateSyncChip();
+    const { rep } = await runDriveSync();
+    lastRep = rep;
+    const pend = rep.pendingSongs.length + rep.pendingSets.length;
+    const n = rep.addedSongs.length + rep.updatedSongs.length + rep.addedSets.length + rep.updatedSets.length;
+    if (pend) toast(`ほかの端末で削除された曲が ${pend}件あります。上の「☁」から確認できます`);
+    else if (n || rep.settings) toast(`同期しました(曲の追加・更新 ${n}件${rep.settings ? '、設定も反映' : ''})`);
+  } catch (e) {
+    if (e.code === 'popup' && reason !== 'tap') { needTap = true; document.addEventListener('pointerdown', () => autoSync('tap'), { capture: true, once: true }); }
+    else lastErr = e.message;
+  }
+  updateSyncChip();
+}
+$('#syncChip').onclick = () => {
+  if (lastRep && lastRep.pendingSongs.length + lastRep.pendingSets.length) { showSyncResult(lastRep, { viaDrive: true, existed: true, folder: drive.getConfig().folderName }); return; }
+  lastErr = '';
+  autoSync('tap');
+};
+db.setOnChange(() => { if (!syncing) scheduleSync(); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') autoSync('visible'); });
+window.addEventListener('online', () => autoSync('online'));
+setInterval(() => { if (document.visibilityState === 'visible') autoSync('timer'); }, 5 * 60 * 1000);
 $('#gdSync').onclick = async () => {
   $('#gdSync').disabled = true;
   try {
+    if (syncing) return toast('同期中です。少しお待ちください');
     toast('ドライブと同期しています…');
     const { rep, res } = await runDriveSync();
     $('#backupDlg').close();
@@ -1162,7 +1258,7 @@ function showSyncResult(rep, opt = {}) {
   chips(lists, '追加されたセットリスト', rep.addedSets.map((x) => x.name), 'add');
   chips(lists, '更新されたセットリスト', rep.updatedSets.map((x) => x.name), 'upd');
   if (!rep.addedSongs.length && !rep.updatedSongs.length && !rep.addedSets.length && !rep.updatedSets.length && !pend) {
-    lists.append(el('p', 'sdnone', '変更はありませんでした。端末とドライブは同じ内容です。'));
+    lists.append(el('p', 'sdnone', rep.settings ? '曲の変更はありません。設定をドライブの内容に合わせました。' : '変更はありませんでした。端末とドライブは同じ内容です。'));
   }
   // 他の端末で削除された曲: 残したいものにチェック → 1クリックで、チェックしていないものを一括削除
   const box = $('#sdPending');
@@ -2252,7 +2348,7 @@ applySettings();
 updateAutoFitBtn();
 history.replaceState({ v: 'library' }, '');
 setTab(settings.view.tab);
-loadLibrary().then(importFromHash);
+loadLibrary().then(importFromHash).then(() => { if (drive.isConfigured()) { drive.loadGis().catch(() => {}); updateSyncChip(); autoSync('start'); } });
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }

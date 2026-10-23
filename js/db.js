@@ -22,9 +22,12 @@ async function tx(store, mode, fn) {
     t.onerror = () => reject(t.error);
   });
 }
+let onChange = () => {};
+export const setOnChange = (f) => { onChange = f; }; // 保存・削除のたびに呼ぶ(自動同期のきっかけ)
+const w = (p) => p.then((r) => { try { onChange(); } catch {} return r; });
 export const allSongs = () => tx('songs', 'readonly', (s) => s.getAll());
-export const putSong = (song) => tx('songs', 'readwrite', (s) => s.put(song));
-export const deleteSong = (id) => tx('songs', 'readwrite', (s) => s.delete(id));
+export const putSong = (song) => w(tx('songs', 'readwrite', (s) => s.put(song)));
+export const deleteSong = (id) => w(tx('songs', 'readwrite', (s) => s.delete(id)));
 export const allSetlists = () => tx('setlists', 'readonly', (s) => s.getAll());
-export const putSetlist = (set) => tx('setlists', 'readwrite', (s) => s.put(set));
-export const deleteSetlist = (id) => tx('setlists', 'readwrite', (s) => s.delete(id));
+export const putSetlist = (set) => w(tx('setlists', 'readwrite', (s) => s.put(set)));
+export const deleteSetlist = (id) => w(tx('setlists', 'readwrite', (s) => s.delete(id)));

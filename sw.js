@@ -1,5 +1,5 @@
 // アプリ本体をキャッシュして、オフラインでも起動できるようにする。
-const CACHE = 'chordstage-v4';
+const CACHE = 'chordstage-v5';
 const FILES = ['./', 'index.html', 'css/style.css', 'js/app.js', 'js/parser.js', 'js/db.js', 'js/drive.js', 'js/sites.js',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 
