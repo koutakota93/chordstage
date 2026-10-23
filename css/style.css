@@ -391,3 +391,10 @@ li.swp.open .swact { box-shadow: -8px 0 12px -8px #0008; }
 .note.tempo { background: color-mix(in srgb, #fb923c 25%, var(--memo)); font-style: normal; font-weight: 700; }
 .sp { display: inline-block; width: 0; height: 0; }
 #btnAutoFit { white-space: nowrap; } #btnAutoFit.on { background: var(--accent); color: var(--accent-fg); font-weight: 700; }
+
+/* セットリスト: ドラッグ並べ替えと、タップ順の番号 */
+#svList li .drag { flex: none; min-width: 40px; min-height: 48px; display: flex; align-items: center; justify-content: center; font-size: 22px; color: var(--dim); cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+#svList li.dragging { position: relative; z-index: 10; opacity: .92; box-shadow: 0 8px 24px #0008; background: var(--panel); cursor: grabbing; }
+#svList li { transition: none; }
+#svList li .ord { flex: none; min-width: 34px; height: 34px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; border: 2px dashed var(--line); color: transparent; }
+#svList li .ord.on { background: var(--accent); color: var(--accent-fg); border: 2px solid var(--accent); }

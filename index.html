@@ -86,7 +86,9 @@
   <div id="svBar" class="svbar hidden">
     <span id="svCount"></span>
     <button id="svSelAll">全選択/解除</button>
+    <button id="svOrder" class="primary" title="選んだ曲を、タップした順に、先頭へ並べ替える">タップ順に並べ替え</button>
     <button id="svBulk" class="primary">担当を一括設定</button>
+    <button id="svRemove" class="danger" title="選んだ曲を、セットリストから外す">選んだ曲を外す</button>
     <button id="svBulkReset" title="選んだ曲の担当の指定を消す">指定を消す</button>
     <button id="svDone">完了</button>
   </div>
@@ -345,7 +347,7 @@
 <dialog id="settingsDlg">
   <form method="dialog">
     <h3>設定</h3>
-    <label>文字サイズ <output id="oFont"></output><input id="sFont" type="range" min="12" max="60" step="1"></label>
+    <label>文字サイズ <output id="oFont"></output><input id="sFont" type="range" min="4" max="60" step="1"></label>
     <label>歌詞の区切りの形<select id="sRangeStyle"></select></label>
     <label class="chk"><input id="sBeatSync" type="checkbox"> リズムの長さで幅を揃える(小節線が行ごとに揃います)</label>
     <label>1拍の幅 <output id="oBeat"></output><input id="sBeatEm" type="range" min="1" max="4" step="0.1"></label>

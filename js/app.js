@@ -17,6 +17,7 @@ const DEFAULT_KEYS = { next: ['ArrowRight', 'ArrowDown', 'PageDown', 'Enter', ' 
 const defaults = { autoFit: true, beatSync: true, beatEm: 2, followTempo: true, rangeOn: true, rangeStyle: 'bracket', colorsByTheme: {}, fontSize: 30, keys: DEFAULT_KEYS, lyricScale: 1, chordScale: 1, colors: {}, custom: null, preset: '', theme: 'dark', beatsPerChord: 4, click: false, countIn: true, tapJump: true };
 let settings = { ...defaults };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('cs.settings') || '{}')); } catch {}
+const MIN_FONT = 4; // 小さい画面(スマホの縦持ちなど)でも、自動幅で全ての行が1段に収まるよう、下限を小さくしてある
 const DEFAULT_GROUP = 2; // ハイライトする行数の初期値
 const COLOR_VARS = { chord: '--chord', lyric: '--lyric', bar: '--bar-color', bg: '--score-bg', hl: '--hl', hlChord: '--hl-chord', hlLyric: '--hl-lyric', hlBar: '--hl-bar', rngA: '--rng-a', rngB: '--rng-b', now: '--now-bg', nowFg: '--now-fg' };
 // 色の組み合わせ(プリセット)。選んだあとで1色ずつ直し、「自分用に保存」できる
@@ -428,12 +429,18 @@ function renderSetView() {
   ol.textContent = '';
   items.forEach((song, i) => {
     const li = el('li');
+    li.dataset.id = song.id;
     if (svSelectMode) {
       const cb = el('input', 'svcb');
       cb.type = 'checkbox'; cb.checked = svSel.has(song.id);
       cb.onclick = (e) => e.stopPropagation();
       cb.onchange = () => { if (cb.checked) svSel.add(song.id); else svSel.delete(song.id); updateSvBar(); };
       li.append(cb);
+      li.append(el('span', 'ord', '')); // タップした順番(updateSvBar で更新)
+    } else {
+      const grip = el('span', 'drag', '⠿'); // つかんで上下にドラッグすると、順番を入れ替えられる
+      grip.title = 'ドラッグして並べ替え';
+      li.append(grip);
     }
     li.append(el('span', 'no', String(i + 1)));
     const box = el('div', 'grow');
@@ -465,14 +472,83 @@ function renderSetView() {
     };
     ol.append(li);
   });
+  if (!svSelectMode) enableDrag(ol);
   updateSvBar();
   $('#svEmpty').textContent = items.length ? '' : 'まだ曲がありません。「＋ 曲を追加」で、ライブラリから選んで追加します。';
 }
 // 複数の曲を選んで、担当をまとめて設定する
 function updateSvBar() {
-  $('#svCount').textContent = svSel.size + '曲を選択中';
-  $('#svBulk').disabled = !svSel.size;
-  $('#svBulkReset').disabled = !svSel.size;
+  const order = [...svSel]; // Set は、入れた順(=タップした順)を覚えている
+  $('#svCount').textContent = svSel.size + '曲を選択中(タップした順に番号が付きます)';
+  ['svBulk', 'svBulkReset', 'svOrder', 'svRemove'].forEach((id) => { $('#' + id).disabled = !svSel.size; });
+  document.querySelectorAll('#svList li').forEach((li) => {
+    const o = li.querySelector('.ord');
+    if (!o) return;
+    const n = order.indexOf(li.dataset.id) + 1;
+    o.textContent = n || '';
+    o.classList.toggle('on', !!n);
+  });
+}
+// 並べ替え(ドラッグ): 左端の「⠿」をつかんで、上下に動かす。指を離した位置で順番が決まる
+function enableDrag(ol) {
+  ol.querySelectorAll('.drag').forEach((grip) => {
+    grip.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      e.preventDefault();
+      const li = grip.closest('li');
+      const scroller = ol.closest('.libbody');
+      let startY = e.clientY;
+      let lastY = e.clientY;
+      li.classList.add('dragging');
+      const place = () => { li.style.transform = `translateY(${lastY - startY}px)`; };
+      const reorder = () => {
+        for (;;) {
+          const r = li.getBoundingClientRect();
+          const mid = (r.top + r.bottom) / 2;
+          const prev = li.previousElementSibling;
+          const next = li.nextElementSibling;
+          const before = li.offsetTop;
+          if (next && mid > (next.getBoundingClientRect().top + next.getBoundingClientRect().bottom) / 2) ol.insertBefore(next, li);
+          else if (prev && mid < (prev.getBoundingClientRect().top + prev.getBoundingClientRect().bottom) / 2) ol.insertBefore(li, prev);
+          else break;
+          startY += li.offsetTop - before; // 自然な位置が動いたぶん、基準を合わせる
+          place();
+        }
+      };
+      let scrollTimer = 0;
+      const autoScroll = () => {
+        const r = scroller.getBoundingClientRect();
+        const dir = lastY < r.top + 60 ? -1 : lastY > r.bottom - 60 ? 1 : 0;
+        if (dir) {
+          const before = scroller.scrollTop;
+          scroller.scrollTop += dir * 12;
+          startY -= scroller.scrollTop - before; // スクロールしたぶん、つかんだ曲が指から離れないように基準を動かす
+          place();
+          reorder();
+        }
+      };
+      const move = (ev) => { lastY = ev.clientY; place(); reorder(); };
+      const up = async () => {
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('pointerup', up);
+        document.removeEventListener('pointercancel', up);
+        clearInterval(scrollTimer);
+        li.classList.remove('dragging');
+        li.style.transform = '';
+        const set = setlists.find((x) => x.id === curSetId);
+        const ids = [...ol.children].map((c) => c.dataset.id);
+        const rest = set.songIds.filter((id) => !ids.includes(id)); // 表示されていない曲は、末尾に残す
+        const changed = ids.some((id, i) => id !== set.songIds[i]);
+        if (changed) { set.songIds = [...ids, ...rest]; await saveSet(set); }
+        renderSetView();
+      };
+      document.addEventListener('pointermove', move);
+      document.addEventListener('pointerup', up);
+      document.addEventListener('pointercancel', up);
+      scrollTimer = setInterval(autoScroll, 40);
+      place();
+    });
+  });
 }
 $('#svSelect').onclick = () => { svSelectMode = !svSelectMode; svSel.clear(); renderSetView(); };
 $('#svDone').onclick = () => { svSelectMode = false; svSel.clear(); renderSetView(); };
@@ -483,6 +559,25 @@ $('#svSelAll').onclick = () => {
   renderSetView();
 };
 $('#svBulk').onclick = () => openSongMembers([...svSel]);
+// タップした順に並べ替える: 選んだ曲を、タップした順で先頭に置き、残りの曲はいまの順で続ける
+$('#svOrder').onclick = async () => {
+  const set = setlists.find((x) => x.id === curSetId);
+  const picked = [...svSel].filter((id) => set.songIds.includes(id));
+  set.songIds = [...picked, ...set.songIds.filter((id) => !svSel.has(id))];
+  await saveSet(set);
+  svSel.clear();
+  renderSetView();
+  toast('タップした順に、' + picked.length + '曲を先頭へ並べ替えました');
+};
+$('#svRemove').onclick = async () => {
+  const set = setlists.find((x) => x.id === curSetId);
+  if (!confirm('選んだ' + svSel.size + '曲を、セットリストから外します(曲そのものは消えません)。よろしいですか?')) return;
+  set.songIds = set.songIds.filter((id) => !svSel.has(id));
+  await saveSet(set);
+  svSel.clear();
+  renderSetView();
+  toast('セットリストから外しました');
+};
 $('#svBulkReset').onclick = async () => {
   const set = setlists.find((x) => x.id === curSetId);
   if (set.songMembers) [...svSel].forEach((id) => delete set.songMembers[id]);
@@ -1589,7 +1684,7 @@ function reflowLines() {
   });
 }
 function setFont(px, { keepPos = true } = {}) {
-  settings.fontSize = Math.max(12, Math.min(60, Math.round(px * 10) / 10));
+  settings.fontSize = Math.max(MIN_FONT, Math.min(60, Math.round(px * 10) / 10));
   applySettings();
   reflowLines();
   const blk = blocks[pos] && blocks[pos].el;
@@ -1607,7 +1702,7 @@ function fitWidth({ silent = false } = {}) {
       return sg.scrollWidth <= sg.clientWidth;
     });
   };
-  let lo = 12;
+  let lo = MIN_FONT;
   let hi = 60;
   for (let i = 0; i < 10; i++) {
     const mid = (lo + hi) / 2;
