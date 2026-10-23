@@ -390,3 +390,4 @@ li.swp.open .swact { box-shadow: -8px 0 12px -8px #0008; }
 .mdaddrow select, .mdaddrow input { padding: 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); font-size: 16px; width: 100%; }
 .note.tempo { background: color-mix(in srgb, #fb923c 25%, var(--memo)); font-style: normal; font-weight: 700; }
 .sp { display: inline-block; width: 0; height: 0; }
+#btnAutoFit { white-space: nowrap; } #btnAutoFit.on { background: var(--accent); color: var(--accent-fg); font-weight: 700; }

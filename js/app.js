@@ -14,7 +14,7 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 
 // ---------- 設定 ----------
 const DEFAULT_KEYS = { next: ['ArrowRight', 'ArrowDown', 'PageDown', 'Enter', ' '], prev: ['ArrowLeft', 'ArrowUp', 'PageUp', 'Backspace'], play: [' '], nextSong: [], prevSong: [] };
-const defaults = { beatSync: true, beatEm: 2, followTempo: true, rangeOn: true, rangeStyle: 'bracket', colorsByTheme: {}, fontSize: 30, keys: DEFAULT_KEYS, lyricScale: 1, chordScale: 1, colors: {}, custom: null, preset: '', theme: 'dark', beatsPerChord: 4, click: false, countIn: true, tapJump: true };
+const defaults = { autoFit: true, beatSync: true, beatEm: 2, followTempo: true, rangeOn: true, rangeStyle: 'bracket', colorsByTheme: {}, fontSize: 30, keys: DEFAULT_KEYS, lyricScale: 1, chordScale: 1, colors: {}, custom: null, preset: '', theme: 'dark', beatsPerChord: 4, click: false, countIn: true, tapJump: true };
 let settings = { ...defaults };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('cs.settings') || '{}')); } catch {}
 const DEFAULT_GROUP = 2; // ハイライトする行数の初期値
@@ -1426,7 +1426,7 @@ function renderScore() {
     b.onclick = () => jumpTo(Number(h.dataset.block));
     mini.append(b);
   });
-  reflowLines();
+  refit();
 }
 
 // 曲中のテンポ変化: 譜面に書かれたテンポ(blk.tempo)から先は、そのテンポで自動モードを進める。
@@ -1596,9 +1596,9 @@ function setFont(px, { keepPos = true } = {}) {
   if (keepPos && blk) $('#score').scrollTop = Math.max(0, blk.offsetTop - $('#score').clientHeight * 0.1);
 }
 // 全ての行が折り返さずに収まる、最大の文字サイズを二分探索で求める
-function fitWidth() {
+function fitWidth({ silent = false } = {}) {
   const score = $('#score');
-  if (!score.querySelector('.blk')) return;
+  if (!score.querySelector('.blk') || !score.clientWidth) return;
   const fits = (size) => {
     document.documentElement.style.setProperty('--fs', size + 'px');
     layoutCells();
@@ -1614,12 +1614,46 @@ function fitWidth() {
     if (fits(mid)) lo = mid; else hi = mid;
   }
   setFont(Math.floor(lo * 10) / 10);
-  toast('文字サイズ ' + settings.fontSize + 'px(全ての行が1段に収まる最大)');
+  if (!silent) toast('文字サイズ ' + settings.fontSize + 'px(全ての行が1段に収まる最大)');
 }
-window.addEventListener('resize', () => { if (!$('#player').classList.contains('hidden')) reflowLines(); });
-$('#fsDown').onclick = () => setFont(settings.fontSize - 2);
-$('#fsUp').onclick = () => setFont(settings.fontSize + 2);
-$('#fsFit').onclick = fitWidth;
+// 画面幅に合わせる設定(初期値はオン)のときは、曲を開いたとき・画面の大きさや向きが変わったとき・表示が変わったときに、自動で合わせる。
+// 自分で文字サイズを変えたときは自動調整をオフにして(固定)、ヘッダーのボタンでオンに戻せる
+const refit = () => { if (settings.autoFit) fitWidth({ silent: true }); else reflowLines(); };
+function updateAutoFitBtn() {
+  const b = $('#btnAutoFit');
+  b.classList.toggle('on', settings.autoFit);
+  b.textContent = settings.autoFit ? '自動幅' : '🔒 固定';
+  b.title = settings.autoFit ? '画面の幅に自動で合わせています(押すと、いまの文字サイズで固定)' : '文字サイズを固定しています(押すと、画面の幅に自動で合わせる)';
+}
+function setAutoFit(on, { quiet = false } = {}) {
+  settings.autoFit = on;
+  applySettings();
+  updateAutoFitBtn();
+  if (on) fitWidth({ silent: true });
+  if (!quiet) toast(on ? '画面の幅に自動で合わせます' : '文字サイズを固定しました(自動調整オフ)');
+}
+$('#btnAutoFit').onclick = () => setAutoFit(!settings.autoFit);
+const manualFont = (px) => { if (settings.autoFit) setAutoFit(false); setFont(px); };
+// 画面の大きさ・向きの変化を検知して、自動で合わせ直す(幅が2px以上変わったときだけ)。
+// ResizeObserver に加えて、resize / orientationchange も見る(片方が届かない環境の保険)
+(() => {
+  let lastW = 0;
+  let timer = 0;
+  const onChange = () => {
+    const sc = $('#score');
+    if (!sc.clientWidth || $('#player').classList.contains('hidden')) return;
+    if (Math.abs(sc.clientWidth - lastW) < 2) return;
+    lastW = sc.clientWidth;
+    clearTimeout(timer);
+    timer = setTimeout(refit, 120);
+  };
+  if (window.ResizeObserver) new ResizeObserver(onChange).observe($('#score'));
+  window.addEventListener('resize', onChange);
+  window.addEventListener('orientationchange', onChange);
+})();
+$('#fsDown').onclick = () => manualFont(settings.fontSize - 2);
+$('#fsUp').onclick = () => manualFont(settings.fontSize + 2);
+$('#fsFit').onclick = () => fitWidth();
 
 // 全画面表示: 上下のバーを全て隠して譜面を最大化する(☰で戻す)。次/前はペダル・キー・譜面タップで操作する。
 // 端末の「戻る」でも、全画面表示 → 通常表示 → 一覧、の順に戻る
@@ -1990,9 +2024,12 @@ function openSettings() {
 }
 $('#btnSettings').onclick = openSettings;
 $('#btnSettings2').onclick = openSettings;
-$('#settingsDlg').addEventListener('input', () => {
-  settings.fontSize = Number($('#sFont').value);
-  $('#oFont').textContent = settings.fontSize + 'px';
+$('#settingsDlg').addEventListener('input', (e) => {
+  if (e.target.id === 'sFont') { // 文字サイズのスライダーを動かしたときだけ(自動で合わせた小数の値を、ほかの操作で上書きしない)
+    if (settings.autoFit) { settings.autoFit = false; updateAutoFitBtn(); toast('文字サイズを固定しました(自動調整オフ)'); } // 自分で変えたら、固定する
+    settings.fontSize = Number($('#sFont').value);
+    $('#oFont').textContent = settings.fontSize + 'px';
+  }
   settings.lyricScale = Number($('#sLyric').value);
   $('#oLyric').textContent = Math.round(settings.lyricScale * 100) + '%';
   settings.chordScale = Number($('#sChord').value);
@@ -2002,7 +2039,7 @@ $('#settingsDlg').addEventListener('input', () => {
   settings.beatSync = $('#sBeatSync').checked; settings.beatEm = Number($('#sBeatEm').value); $('#oBeat').textContent = settings.beatEm.toFixed(1) + 'em';
   settings.followTempo = $('#sFollow').checked; settings.countIn = $('#sCountIn').checked; settings.click = $('#sClick').checked; settings.tapJump = $('#sTap').checked;
   applySettings();
-  if (!$('#player').classList.contains('hidden')) reflowLines(); // 幅の設定などは、配置のやり直しが要る
+  if (!$('#player').classList.contains('hidden')) refit(); // 幅の設定などは、配置のやり直し(自動幅のときは合わせ直し)が要る
 });
 
 // ---------- アプリの更新 / 色の設定 ----------
@@ -2076,7 +2113,7 @@ function setRange(on, style) {
   if (on !== undefined) settings.rangeOn = on;
   if (style) settings.rangeStyle = style;
   applySettings();
-  if (!$('#player').classList.contains('hidden')) reflowLines(); // オフのときは、コードの変わり目の隙間をなくすので、配置をやり直す
+  if (!$('#player').classList.contains('hidden')) refit(); // オフのときは、コードの変わり目の隙間をなくすので、配置をやり直す
 }
 $('#btnRange').onclick = () => { setRange(!settings.rangeOn); toast(settings.rangeOn ? '歌詞の区切りを表示' : '歌詞の区切りを非表示'); };
 (() => {
@@ -2102,7 +2139,7 @@ function switchTheme(next) {
 function updateThemeButtons() {
   document.querySelectorAll('.themebtn').forEach((b) => { b.textContent = settings.theme === 'dark' ? '☀ ライト' : '🌙 ダーク'; b.title = settings.theme === 'dark' ? 'ライトモードに切り替え' : 'ダークモードに切り替え'; });
 }
-document.querySelectorAll('.themebtn').forEach((b) => { b.onclick = () => { switchTheme(settings.theme === 'dark' ? 'light' : 'dark'); setTimeout(() => { if (!$('#player').classList.contains('hidden')) reflowLines(); }, 0); }; });
+document.querySelectorAll('.themebtn').forEach((b) => { b.onclick = () => { switchTheme(settings.theme === 'dark' ? 'light' : 'dark'); setTimeout(() => { if (!$('#player').classList.contains('hidden')) refit(); }, 0); }; });
 updateThemeButtons();
 
 // ---------- 画面を消さない ----------
@@ -2117,6 +2154,7 @@ document.addEventListener('visibilitychange', () => {
 
 // ---------- 起動 ----------
 applySettings();
+updateAutoFitBtn();
 history.replaceState({ v: 'library' }, '');
 setTab(settings.view.tab);
 loadLibrary().then(importFromHash);
