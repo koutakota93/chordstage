@@ -39,7 +39,7 @@
           <option value="all">すべて</option><option value="fav">★ お気に入り</option><option value="practice">練習中</option>
         </select></label>
         <label>表示<select id="vStyle">
-          <option value="standard">標準</option><option value="compact">コンパクト</option><option value="cards">カード</option>
+          <option value="browse">アーティスト一覧</option><option value="standard">標準</option><option value="compact">コンパクト</option><option value="cards">カード</option>
         </select></label>
       </div>
       <details class="fieldsel"><summary>表示する項目</summary>
@@ -53,6 +53,10 @@
           <label class="chk"><input type="checkbox" data-vf="site"> 出典サイト</label>
         </div>
       </details>
+      <div id="browse" class="browse hidden">
+        <nav id="artistList" class="artists"></nav>
+        <section id="browseSongs" class="bsongs"><header id="bsHead"></header></section>
+      </div>
       <ul id="songList"></ul>
       <p id="emptyMsg" class="hint"></p>
       <p class="hint">曲のカードをタップすると開きます。右端の「⋯」で、変更・セットへ追加・複製・削除などのメニューが出ます。削除した曲は「削除した曲」タブに移り、あとで戻せます。</p>

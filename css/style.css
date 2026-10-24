@@ -433,3 +433,42 @@ li.swp.open .swact { box-shadow: -8px 0 12px -8px #0008; }
 .note.tempo { border-left-color: #fb923c; }
 .note.tempo::before { content: ''; }
 .blk.cur .note { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent); }
+
+/* ---- 曲リスト: アーティスト一覧 → 曲リスト(Musicアプリ風) ---- */
+#songsPane.browsing .libtools label:nth-child(2), #songsPane.browsing > .hint { display: none; }
+.libbody:has(#browse:not(.hidden)) { max-width: 1180px; }
+.browse { display: grid; grid-template-columns: minmax(230px, 34%) 1fr; gap: 14px; height: max(62dvh, 380px); margin: 12px 0; }
+.browse.hidden { display: none; }
+.artists, .bsongs { overflow-y: auto; overscroll-behavior: contain; border-radius: 18px; border: 1px solid var(--line); background: var(--panel); }
+.artists { padding: 8px; display: flex; flex-direction: column; gap: 2px; scrollbar-width: thin; }
+.ainit { position: sticky; top: -8px; z-index: 2; padding: 8px 10px 4px; font-size: 12px; font-weight: 800; letter-spacing: .12em; color: var(--dim); background: linear-gradient(var(--panel) 70%, transparent); }
+.artist { display: flex; align-items: center; gap: 12px; width: 100%; padding: 8px 10px; min-height: 60px; text-align: left; border: 0; border-radius: 14px; background: transparent; color: var(--fg); cursor: pointer; transition: background .15s; }
+.artist:hover { background: color-mix(in srgb, var(--fg) 7%, transparent); }
+.artist .at { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.artist .at b { font-size: 16px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.artist .at small { font-size: 12px; color: var(--dim); }
+.artist .chev { font-style: normal; font-size: 22px; color: var(--dim); opacity: .6; }
+.artist.on { background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 26%, transparent), color-mix(in srgb, var(--accent) 6%, transparent)); box-shadow: inset 3px 0 0 var(--accent); }
+.artist.on .chev { color: var(--accent); opacity: 1; }
+.avatar { flex: none; width: 44px; height: 44px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: 19px; color: #fff;
+  background: linear-gradient(135deg, hsl(var(--h) 72% 58%), hsl(calc(var(--h) + 45) 70% 38%)); box-shadow: 0 2px 8px hsl(var(--h) 70% 30% / .45), inset 0 1px 0 rgba(255,255,255,.25); text-shadow: 0 1px 2px rgba(0,0,0,.35); }
+.avatar.big { width: 84px; height: 84px; font-size: 38px; border-radius: 22px; }
+.bsongs { padding: 0 12px 12px; scrollbar-width: thin; }
+#bsHead { position: sticky; top: 0; z-index: 3; margin: 0 -12px 8px; padding: 18px 18px 14px; display: flex; align-items: center; gap: 16px;
+  background: linear-gradient(135deg, hsl(var(--h) 55% 30% / .85), var(--panel) 85%); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+.bsmeta { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.bsmeta small { font-size: 11px; font-weight: 800; letter-spacing: .14em; color: color-mix(in srgb, var(--fg) 65%, transparent); }
+.bsmeta h2 { margin: 0; font-size: 26px; line-height: 1.15; overflow-wrap: anywhere; }
+.bsmeta span { font-size: 13px; color: var(--dim); }
+.bsback { display: none; position: absolute; top: 6px; left: 6px; min-height: 34px; padding: 0 10px; border: 0; background: transparent; color: var(--accent); font-size: 15px; font-weight: 700; }
+.bsongs #songList { margin: 4px 0 0; }
+.bsongs #songList li.song { border-radius: 14px; }
+.bsongs #songList li.song:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+@media (max-width: 760px) {
+  .browse { grid-template-columns: 1fr; height: max(68dvh, 360px); }
+  .browse:not(.open) .bsongs, .browse.open .artists { display: none; }
+  .bsback { display: block; }
+  #bsHead { padding: 44px 16px 14px; }
+  .avatar.big { width: 64px; height: 64px; font-size: 28px; border-radius: 18px; }
+  .bsmeta h2 { font-size: 21px; }
+}

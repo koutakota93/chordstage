@@ -29,13 +29,14 @@ const PRESETS = [
   { id: 'green', name: 'グリーン(黒板風)', theme: 'dark', colors: { bg: '#0f2217', chord: '#ffe08a', lyric: '#e9f5ec', bar: '#86ad92', hl: '#2c6b46', hlChord: '#ffeaa8', hlLyric: '#ffffff', hlBar: '#c4e8d1', rngA: '#fde68a', rngB: '#a7f3d0', now: '#ffd23f', nowFg: '#1a1100' } },
   { id: 'paper', name: 'ペーパー(明るい場所)', theme: 'light', colors: { bg: '#fafaf7', chord: '#0a58c2', lyric: '#1c1c1c', bar: '#555b66', hl: '#ffe08a', hlChord: '#0b3b94', hlLyric: '#2b1d00', hlBar: '#5b4300', rngA: '#059669', rngB: '#2563eb', now: '#b3200a', nowFg: '#ffffff' } },
 ];
-const VIEW_DEFAULT = { sort: 'updated', group: 'none', style: 'standard', filter: 'all', tab: 'songs', fields: { artist: true, key: true, capo: true, bpm: false, tags: true, transpose: true, site: true } };
+const VIEW_DEFAULT = { sort: 'updated', group: 'none', style: 'browse', filter: 'all', tab: 'songs', fields: { artist: true, key: true, capo: true, bpm: false, tags: true, transpose: true, site: true } };
 settings.keys = { ...DEFAULT_KEYS, ...(settings.keys || {}) };
 settings.view = { ...VIEW_DEFAULT, ...(settings.view || {}), fields: { ...VIEW_DEFAULT.fields, ...((settings.view || {}).fields || {}) } };
 // 設定の同期: 端末ごとに違うもの(文字サイズ・開いているタブ)は除く。変えた時刻(cs.settingsAt)が新しい方を採用する
 const syncSettings = () => { const { fontSize, ...r } = settings; const { tab, ...v } = settings.view || {}; return { ...r, view: v }; };
 let lastSettingsStr = JSON.stringify(syncSettings());
 const getSettingsAt = () => Number(localStorage.getItem('cs.settingsAt') || 0);
+if (!settings.view.browseSeen) { settings.view.style = 'browse'; settings.view.browseSeen = true; } // 曲リストを、アーティスト一覧+曲リストの表示にする(一度だけ。「表示」でいつでも戻せる)
 const RANGE_STYLES = [['bracket', '括弧(上と左)'], ['box', '四角い枠'], ['fill', '色で塗る'], ['under', '下線'], ['left', '左の縦線だけ']];
 function applyRangeClass() {
   const sc = document.querySelector('#score');
@@ -197,6 +198,55 @@ async function toggleFlag(s, key) {
   await db.putSong(s);
   await loadLibrary();
 }
+// ---- アーティスト一覧 → 曲リスト(Musicアプリ風) ----
+let browseSel = '__all'; // 選んでいるアーティスト(__all: すべての曲)
+let browseOpen = false;  // 幅が狭いとき、曲リストを開いているか
+const ARTIST_NONE = '(アーティスト不明)';
+const artistOf = (s) => (s.artist || '').trim() || ARTIST_NONE;
+const hueOf = (t) => { let h = 0; for (const c of t) h = (h * 31 + c.codePointAt(0)) % 360; return h; };
+function avatar(name, cls = '') {
+  const a = el('span', 'avatar ' + cls, name === '__all' ? '♫' : [...name.replace(/^[\s(（]+/, '')][0] || '♪');
+  a.style.setProperty('--h', name === '__all' ? 40 : hueOf(name));
+  return a;
+}
+function renderBrowse(list, ul) {
+  const byArtist = new Map();
+  list.forEach((s) => { const a = artistOf(s); if (!byArtist.has(a)) byArtist.set(a, []); byArtist.get(a).push(s); });
+  if (browseSel !== '__all' && !byArtist.has(browseSel)) browseSel = '__all';
+  const nav = $('#artistList');
+  nav.textContent = '';
+  const row = (key, label, n) => {
+    const b = el('button', 'artist' + (key === browseSel ? ' on' : ''));
+    b.type = 'button';
+    const t = el('span', 'at');
+    t.append(el('b', '', label), el('small', '', n + '曲'));
+    b.append(avatar(key), t, el('i', 'chev', '›'));
+    b.onclick = () => { browseSel = key; browseOpen = true; renderBrowse(list, ul); $('#browseSongs').scrollTop = 0; };
+    return b;
+  };
+  nav.append(row('__all', 'すべての曲', list.length));
+  const names = [...byArtist.keys()].sort((a, b) => (a === ARTIST_NONE) - (b === ARTIST_NONE) || ja(a, b));
+  let last = '';
+  names.forEach((n) => {
+    const ini = n === ARTIST_NONE ? '#' : initialOf({ title: n });
+    if (ini !== last) { nav.append(el('div', 'ainit', ini)); last = ini; }
+    nav.append(row(n, n, byArtist.get(n).length));
+  });
+  const songsOf = browseSel === '__all' ? list : byArtist.get(browseSel) || [];
+  const head = $('#bsHead');
+  head.textContent = '';
+  const back = el('button', 'bsback', '‹ アーティスト');
+  back.type = 'button';
+  back.onclick = () => { browseOpen = false; renderBrowse(list, ul); };
+  const meta = el('div', 'bsmeta');
+  meta.append(el('small', '', browseSel === '__all' ? 'ライブラリ' : 'アーティスト'), el('h2', '', browseSel === '__all' ? 'すべての曲' : browseSel), el('span', '', songsOf.length + '曲'));
+  head.append(back, avatar(browseSel, 'big'), meta);
+  head.style.setProperty('--h', browseSel === '__all' ? 40 : hueOf(browseSel));
+  $('#browse').classList.toggle('open', browseOpen);
+  ul.textContent = '';
+  songsOf.forEach((s) => ul.append(songItem(s)));
+  if (!songsOf.length) ul.append(el('li', 'grp', '該当する曲がありません'));
+}
 function renderLibrary() {
   const v = settings.view;
   const q = $('#search').value.trim().toLowerCase();
@@ -209,6 +259,17 @@ function renderLibrary() {
     .filter((s) => v.filter === 'all' || (v.filter === 'fav' ? s.fav : s.practice))
     .filter((s) => !q || (s.title + ' ' + (s.artist || '') + ' ' + tagsOf(s).join(' ')).toLowerCase().includes(q))
     .sort(SORTS[v.sort] || SORTS.updated);
+  const inBrowse = v.style === 'browse';
+  $('#songsPane').classList.toggle('browsing', inBrowse);
+  $('#browse').classList.toggle('hidden', !inBrowse);
+  if (inBrowse) {
+    ul.className = '';
+    $('#browseSongs').append(ul);
+    renderBrowse(list, ul);
+    $('#emptyMsg').textContent = songs.length ? '' : 'まだ曲がありません。「＋ 曲を追加」からChordWikiのコード譜を貼り付けてください。';
+    return;
+  }
+  if (ul.parentElement !== $('#songsPane')) $('#songsPane').insertBefore(ul, $('#emptyMsg'));
   if (v.group === 'none') list.forEach((s) => ul.append(songItem(s)));
   else {
     const groups = new Map();
