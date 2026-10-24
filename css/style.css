@@ -579,3 +579,10 @@ dialog label input:focus, dialog label select:focus, dialog textarea:focus { bor
 :root[data-theme="light"] #fab { background: linear-gradient(160deg, #8b5cf6, #6d28d9 55%, #4c1d95); }
 :root[data-theme="light"] #fab.run { background: linear-gradient(160deg, #3730a3, #1e1b4b 60%, #0f0d2e); box-shadow: 0 10px 28px rgba(30,27,75,.5), 0 0 0 3px rgba(139,92,246,.45), inset 0 1px 0 rgba(255,255,255,.25); }
 :root[data-theme="light"] #fab.run .fi { color: #e9e3ff; }
+/* 再生・停止ボタンを横に広げる: ハイライトされていない行にはかぶってよい(下寄りに置いているので、ハイライトの行にはかかりにくい) */
+#fab { width: 210px; height: 128px; flex-direction: row; gap: 14px; border-radius: 40px; }
+#fab .fi { font-size: 54px; }
+#fab .fl { font-size: 18px; max-width: 5.5em; text-align: left; line-height: 1.2; }
+#player.focus .stage:has(#fab:not(.hidden)) #score { padding-right: 0; }
+#player.focus #fab { bottom: 70px; right: 14px; }
+@media (max-width: 760px) { #fab { width: 160px; height: 104px; gap: 10px; border-radius: 32px; } #fab .fi { font-size: 40px; } #fab .fl { font-size: 15px; } #player.focus .stage:has(#fab:not(.hidden)) #score { padding-right: 0; } }
