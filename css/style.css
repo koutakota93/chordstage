@@ -414,3 +414,15 @@ li.swp.open .swact { box-shadow: -8px 0 12px -8px #0008; }
 .ch .rhy { font-size: .8em; font-weight: 700; letter-spacing: .06em; margin-left: .25em; padding: 0 .3em; border-radius: .3em;
   color: color-mix(in srgb, var(--chord) 45%, var(--lyric)); background: color-mix(in srgb, var(--chord) 16%, transparent); vertical-align: .05em; }
 .blk.cur .ch .rhy { color: var(--hl-chord); background: color-mix(in srgb, var(--hl-chord) 14%, transparent); }
+/* 幅の狭いスマホ: 下のバーが横にはみ出して見切れないよう、折り返して全体を収める */
+.ctl { max-width: 100%; box-sizing: border-box; }
+.modebox { flex-wrap: wrap; min-width: 0; max-width: 100%; }
+.bpm { flex-wrap: wrap; min-width: 0; }
+@media (max-width: 600px) {
+  .ctl .big { min-height: 56px; min-width: 0; font-size: 18px; padding: 0 12px; }
+  .transport { gap: 8px; width: 100%; flex-basis: 100%; }
+  .transport .primary { max-width: none; }
+  .modebox { width: 100%; justify-content: space-between; gap: 6px; }
+  .bpm { gap: 3px; flex: 1 1 auto; justify-content: flex-end; }
+  .bpm button { min-width: 0; padding: 0 8px; }
+}
