@@ -554,15 +554,17 @@ dialog label input:focus, dialog label select:focus, dialog textarea:focus { bor
 * { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--fg) 25%, transparent) transparent; }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 
-/* 再生・停止ボタン(自動モード): 譜面台に隠れない画面の上寄り・右に置く。ペダルと同じ動作 */
-#fab { position: absolute; top: 12px; right: 22px; z-index: 8; width: 84px; height: 84px; min-height: 0; padding: 0; border-radius: 50%; border: 0;
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; line-height: 1.1; color: var(--accent-fg);
-  background: radial-gradient(circle at 30% 25%, color-mix(in srgb, var(--accent) 70%, #fff), var(--accent) 60%, color-mix(in srgb, var(--accent) 80%, #000));
-  box-shadow: 0 6px 22px var(--glow), 0 2px 6px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.5); opacity: .94; }
-#fab .fi { font-size: 30px; font-weight: 800; }
-#fab .fl { font-size: 11px; font-weight: 800; letter-spacing: .04em; }
-#fab.run { color: #fff; background: radial-gradient(circle at 30% 25%, #ff8a8a, #e11d48 62%, #9f1239); box-shadow: 0 6px 22px rgba(225,29,72,.45), 0 2px 6px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.4); }
-#fab:active { transform: scale(.94); }
-.stage:has(#fab:not(.hidden)) #minimap { padding-top: 108px; }
-#player.focus #fab { top: 64px; right: 14px; }
-@media (max-width: 760px) { #fab { width: 72px; height: 72px; right: 28px; } #fab .fi { font-size: 26px; } }
+/* 再生・停止ボタン(自動モード): 右の列(セクション一覧の列)の下寄りに置く。譜面にはかぶらず、譜面台にも隠れにくい高さ。ペダルと同じ動作 */
+#fab { position: absolute; bottom: 64px; right: 10px; z-index: 8; width: 108px; height: 150px; min-height: 0; padding: 0; border-radius: 36px; border: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; line-height: 1.1; color: var(--accent-fg);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 72%, #fff), var(--accent) 55%, color-mix(in srgb, var(--accent) 78%, #000));
+  box-shadow: 0 10px 28px var(--glow), 0 2px 8px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.55), inset 0 -3px 0 rgba(0,0,0,.12); opacity: .96; }
+#fab .fi { font-size: 50px; font-weight: 800; line-height: 1; filter: drop-shadow(0 2px 0 rgba(255,255,255,.25)); }
+#fab .fl { font-size: 15px; font-weight: 800; letter-spacing: .04em; }
+#fab.run { color: #fff; background: linear-gradient(160deg, #ff8a8a, #e11d48 58%, #9f1239); box-shadow: 0 10px 28px rgba(225,29,72,.45), 0 2px 8px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.4), inset 0 -3px 0 rgba(0,0,0,.18); }
+#fab:active { transform: scale(.95); }
+.stage:has(#fab:not(.hidden)) #minimap { padding-bottom: 230px; }
+/* 全画面: セクション一覧が消えるので、ボタンの分だけ譜面の右を空ける(コードにかぶらない) */
+#player.focus .stage:has(#fab:not(.hidden)) #score { padding-right: 124px; }
+#player.focus #fab { bottom: 70px; right: 8px; }
+@media (max-width: 760px) { #fab { width: 92px; height: 124px; border-radius: 30px; } #fab .fi { font-size: 40px; } #fab .fl { font-size: 13px; } .stage:has(#fab:not(.hidden)) #minimap { padding-bottom: 200px; } #player.focus .stage:has(#fab:not(.hidden)) #score { padding-right: 104px; } }
