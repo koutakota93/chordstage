@@ -2466,6 +2466,13 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // ---------- ホーム画面へのインストール ----------
+// ページ内の <link rel=manifest> が見当たらない端末があったため、無ければ付け直す(Chromeは、あとから足した分も読み直す)
+if (!document.querySelector('link[rel=manifest]')) {
+  const l = document.createElement('link');
+  l.rel = 'manifest';
+  l.href = 'manifest.webmanifest';
+  document.head.append(l);
+}
 // Chromeのメニューから「インストールできない」と言われる端末でも、アプリ内のボタンから直接インストールを呼び出せることがある。
 // それでも出ないときは、診断で原因の手がかりを集める
 let installEvt = null;
@@ -2496,7 +2503,8 @@ $('#btnDiag').onclick = async () => {
   ok(isStandalone(), 'すでにアプリとして起動中: ' + (isStandalone() ? 'はい' : 'いいえ'));
   ok(!!navigator.serviceWorker && !!navigator.serviceWorker.controller, 'Service Workerが動いている');
   try {
-    const link = document.querySelector('link[rel=manifest]');
+    const link = document.querySelector('link[rel=manifest]') || { href: new URL('manifest.webmanifest', location.href).href };
+    ok(!!document.querySelector('link[rel=manifest]'), '<link rel=manifest> がページ内にある(なければ、自動で付け直す)');
     const res = await fetch(link.href, { cache: 'no-cache' });
     const m = await res.json();
     ok(res.ok, 'manifestを読める(' + res.status + ')');
@@ -2510,6 +2518,7 @@ $('#btnDiag').onclick = async () => {
   if (navigator.getInstalledRelatedApps) {
     try { const a = await navigator.getInstalledRelatedApps(); L.push('・インストール済みの関連アプリ: ' + a.length + '件'); } catch {}
   }
+  L.push('・タブ: ' + (window.top === window ? '単独' : '埋め込み(iframe)') + ' / ページ内のlink: ' + [...document.querySelectorAll('link')].map((l) => l.rel).join(',') + ' / 参照元: ' + (document.referrer || 'なし'));
   ok(!!installEvt, 'Chromeからインストール可能の合図(beforeinstallprompt)が来ている');
   const m = navigator.userAgent.match(/Chrome\/([\d.]+)/);
   L.push('・Chrome ' + (m ? m[1] : '不明') + ' / ' + (/Mobile/.test(navigator.userAgent) ? 'モバイル表示' : 'PC版サイト表示') + ' / 画面 ' + innerWidth + '×' + innerHeight);
