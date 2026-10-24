@@ -1801,11 +1801,13 @@ function chordAtPoint(e, blk) {
   }
   return label ? blk.chordEls.indexOf(label) : -1;
 }
-// コードの層は pointer-events:none なので、タップした座標が、光っているコード(と拍の表示)の枠の中かで判定する
+// コードの層は pointer-events:none なので、タップした座標が、光っているコード(と拍の表示、コードが囲っている歌詞の範囲)の枠の中かで判定する
 function hitsNowChord(e) {
   const c = document.querySelector('.ch.now');
   if (!c) return false;
   const rs = [c.getBoundingClientRect(), ...[...c.querySelectorAll('.bt')].map((b) => b.getBoundingClientRect())];
+  const rng = c.previousElementSibling; // コードが囲っている歌詞の範囲(.rng)も、タップの対象にする
+  if (rng && rng.classList.contains('rng')) rs.push(rng.getBoundingClientRect());
   const m = 10;
   return rs.some((r) => e.clientX >= r.left - m && e.clientX <= r.right + m && e.clientY >= r.top - m && e.clientY <= r.bottom + m);
 }
