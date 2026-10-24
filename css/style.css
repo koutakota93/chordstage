@@ -426,3 +426,10 @@ li.swp.open .swact { box-shadow: -8px 0 12px -8px #0008; }
   .bpm { gap: 3px; flex: 1 1 auto; justify-content: flex-end; }
   .bpm button { min-width: 0; padding: 0 8px; }
 }
+/* {ci:…} などの演奏上の指示: 少し大きく・太く、左に色の帯と▸を付けて、コードや歌詞とは違うものだと一目で分かるようにする(行の上に置くので、じゃまにならない) */
+.note { display: inline-flex; align-items: center; gap: .45em; font-size: .72em; font-style: normal; font-weight: 700; line-height: 1.3;
+  margin: 6px 0 4px 6px; padding: .15em .8em .15em .55em; border-radius: .35em; border-left: .3em solid var(--accent); }
+.note::before { content: '▸'; color: var(--accent); font-size: .9em; }
+.note.tempo { border-left-color: #fb923c; }
+.note.tempo::before { content: ''; }
+.blk.cur .note { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent); }
