@@ -14,7 +14,7 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 
 // ---------- 設定 ----------
 const DEFAULT_KEYS = { next: ['ArrowRight', 'ArrowDown', 'PageDown', 'Enter', ' '], prev: ['ArrowLeft', 'ArrowUp', 'PageUp', 'Backspace'], play: [' '], nextSong: [], prevSong: [] };
-const defaults = { autoFit: true, beatSync: true, beatEm: 2, followTempo: true, rangeOn: true, rangeStyle: 'bracket', colorsByTheme: {}, fontSize: 30, keys: DEFAULT_KEYS, lyricScale: 1, chordScale: 1, colors: {}, custom: null, preset: '', theme: 'dark', beatsPerChord: 4, click: false, tapJump: true };
+const defaults = { autoFit: true, beatSync: true, beatEm: 2, followTempo: true, rangeOn: true, rangeStyle: 'bracket', colorsByTheme: {}, fontSize: 30, keys: DEFAULT_KEYS, lyricScale: 1, chordScale: 1, colors: {}, custom: null, preset: '', theme: 'dark', beatsPerChord: 4, click: false, tapJump: true, pedalToggle: false };
 let settings = { ...defaults };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('cs.settings') || '{}')); } catch {}
 const MIN_FONT = 4; // 小さい画面(スマホの縦持ちなど)でも、自動幅で全ての行が1段に収まるよう、下限を小さくしてある
@@ -2064,7 +2064,12 @@ document.addEventListener('keydown', (e) => {
   if (/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
   const k = e.key;
   const has = (a) => (settings.keys[a] || []).includes(k);
-  if (has('play') && autoMode) { if (!e.repeat) autoOn ? stopAuto() : startAuto(); }
+  if (autoMode && settings.pedalToggle && (has('next') || has('play'))) { // ペダル1つ: 1回で停止、もう1回で次の行から開始
+    if (e.repeat) return e.preventDefault();
+    if (autoOn) stopAuto();
+    else if (pos < blocks.length - 1) { jumpTo(pos + 1); startAuto(); }
+    else next();
+  } else if (has('play') && autoMode) { if (!e.repeat) autoOn ? stopAuto() : startAuto(); }
   else if (has('next')) { if (!e.repeat) next(); }
   else if (has('prev')) { if (!e.repeat) prev(); }
   else if (has('nextSong')) { if (!e.repeat) gotoSong(1); }
@@ -2223,7 +2228,7 @@ function openSettings() {
   $('#sChord').value = settings.chordScale; $('#oChord').textContent = Math.round(settings.chordScale * 100) + '%';
   $('#sTheme').value = settings.theme; $('#sBeats').value = settings.beatsPerChord;
   $('#sBeatSync').checked = settings.beatSync; $('#sBeatEm').value = settings.beatEm; $('#oBeat').textContent = settings.beatEm.toFixed(1) + 'em';
-  $('#sFollow').checked = settings.followTempo; $('#sClick').checked = settings.click; $('#sTap').checked = settings.tapJump;
+  $('#sFollow').checked = settings.followTempo; $('#sClick').checked = settings.click; $('#sTap').checked = settings.tapJump; $('#sPedal').checked = settings.pedalToggle;
   fillColorInputs();
   fillPresetSelect();
   renderKeyMap();
@@ -2245,7 +2250,7 @@ $('#settingsDlg').addEventListener('input', (e) => {
   if ($('#sTheme').value !== settings.theme) switchTheme($('#sTheme').value);
   settings.beatsPerChord = Math.max(1, Math.min(16, Number($('#sBeats').value) || 4));
   settings.beatSync = $('#sBeatSync').checked; settings.beatEm = Number($('#sBeatEm').value); $('#oBeat').textContent = settings.beatEm.toFixed(1) + 'em';
-  settings.followTempo = $('#sFollow').checked; settings.click = $('#sClick').checked; settings.tapJump = $('#sTap').checked;
+  settings.followTempo = $('#sFollow').checked; settings.click = $('#sClick').checked; settings.tapJump = $('#sTap').checked; settings.pedalToggle = $('#sPedal').checked;
   applySettings();
   if (!$('#player').classList.contains('hidden')) refit(); // 幅の設定などは、配置のやり直し(自動幅のときは合わせ直し)が要る
 });
