@@ -571,3 +571,11 @@ dialog label input:focus, dialog label select:focus, dialog textarea:focus { bor
 #player.focus .stage:has(#fab:not(.hidden)) #score { padding-right: 124px; }
 #player.focus #fab { bottom: 70px; right: 8px; }
 @media (max-width: 760px) { #fab { width: 92px; height: 124px; border-radius: 30px; } #fab .fi { font-size: 40px; } #fab .fl { font-size: 13px; } .stage:has(#fab:not(.hidden)) #minimap { padding-bottom: 200px; } #player.focus .stage:has(#fab:not(.hidden)) #score { padding-right: 104px; } }
+/* 再生・停止ボタンの色: ダークでは明るく光らせ、ライトでは濃く締める(どちらでも背景に埋もれない) */
+:root:not([data-theme="light"]) #fab { background: linear-gradient(160deg, #c4b5fd, #8b5cf6 55%, #6d28d9); box-shadow: 0 0 0 2px rgba(196,181,253,.55), 0 10px 30px rgba(139,92,246,.6), inset 0 1px 0 rgba(255,255,255,.55), inset 0 -3px 0 rgba(0,0,0,.18); }
+:root:not([data-theme="light"]) #fab.run { background: linear-gradient(160deg, #ffffff, #ede9fe 55%, #c4b5fd); color: #3b0764; border-color: #fff;
+  box-shadow: 0 0 0 3px rgba(196,181,253,.8), 0 10px 32px rgba(196,181,253,.55), inset 0 -3px 0 rgba(91,33,182,.18); }
+:root:not([data-theme="light"]) #fab.run .fi { color: #5b21b6; text-shadow: none; }
+:root[data-theme="light"] #fab { background: linear-gradient(160deg, #8b5cf6, #6d28d9 55%, #4c1d95); }
+:root[data-theme="light"] #fab.run { background: linear-gradient(160deg, #3730a3, #1e1b4b 60%, #0f0d2e); box-shadow: 0 10px 28px rgba(30,27,75,.5), 0 0 0 3px rgba(139,92,246,.45), inset 0 1px 0 rgba(255,255,255,.25); }
+:root[data-theme="light"] #fab.run .fi { color: #e9e3ff; }
