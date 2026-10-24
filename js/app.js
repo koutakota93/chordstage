@@ -1805,6 +1805,7 @@ $('#score').addEventListener('click', (e) => {
   if (memoMode || !settings.tapJump) return;
   const sech = e.target.closest('.sech');
   if (sech) return jumpTo(Number(sech.dataset.block));
+  if (autoOn && e.target.closest('.ch.now')) return stopAuto(); // 再生中の、光っているコードをタップすると停止
   const target = e.target.closest('.blk');
   if (!target) return;
   const i = Number(target.dataset.block);
