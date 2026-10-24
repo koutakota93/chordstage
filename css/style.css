@@ -555,13 +555,16 @@ dialog label input:focus, dialog label select:focus, dialog textarea:focus { bor
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 
 /* 再生・停止ボタン(自動モード): 右の列(セクション一覧の列)の下寄りに置く。譜面にはかぶらず、譜面台にも隠れにくい高さ。ペダルと同じ動作 */
-#fab { position: absolute; bottom: 64px; right: 10px; z-index: 8; width: 108px; height: 150px; min-height: 0; padding: 0; border-radius: 36px; border: 0;
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; line-height: 1.1; color: var(--accent-fg);
-  background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 72%, #fff), var(--accent) 55%, color-mix(in srgb, var(--accent) 78%, #000));
-  box-shadow: 0 10px 28px var(--glow), 0 2px 8px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.55), inset 0 -3px 0 rgba(0,0,0,.12); opacity: .96; }
-#fab .fi { font-size: 50px; font-weight: 800; line-height: 1; filter: drop-shadow(0 2px 0 rgba(255,255,255,.25)); }
+#fab { position: absolute; bottom: 64px; right: 10px; z-index: 8; width: 108px; height: 150px; min-height: 0; padding: 0; border-radius: 36px; border: 1px solid rgba(255,255,255,.28);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; line-height: 1.1; color: #fff;
+  /* ハイライトの黄色・コードの青や赤と重ならないよう、紫(開始)と濃い藍(停止)にする */
+  background: linear-gradient(160deg, #a78bfa, #7c3aed 55%, #5b21b6);
+  box-shadow: 0 10px 28px rgba(124,58,237,.45), 0 2px 8px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.4), inset 0 -3px 0 rgba(0,0,0,.2); opacity: .97; }
+#fab .fi { font-size: 50px; font-weight: 800; line-height: 1; text-shadow: 0 2px 6px rgba(0,0,0,.3); }
 #fab .fl { font-size: 15px; font-weight: 800; letter-spacing: .04em; }
-#fab.run { color: #fff; background: linear-gradient(160deg, #ff8a8a, #e11d48 58%, #9f1239); box-shadow: 0 10px 28px rgba(225,29,72,.45), 0 2px 8px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.4), inset 0 -3px 0 rgba(0,0,0,.18); }
+#fab.run { background: linear-gradient(160deg, #475569, #1e293b 60%, #0f172a); border-color: rgba(255,255,255,.35);
+  box-shadow: 0 10px 28px rgba(15,23,42,.55), 0 0 0 3px rgba(167,139,250,.55), 0 2px 8px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.25); }
+#fab.run .fi { color: #e9e3ff; }
 #fab:active { transform: scale(.95); }
 .stage:has(#fab:not(.hidden)) #minimap { padding-bottom: 230px; }
 /* 全画面: セクション一覧が消えるので、ボタンの分だけ譜面の右を空ける(コードにかぶらない) */
