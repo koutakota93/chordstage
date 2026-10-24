@@ -1509,6 +1509,7 @@ async function openSong(id, ctx = null) {
   renderPlayer();
   played = false;
   setMode(true); // 曲を開いたら、自動モードにする
+  setFab(false);
   setPos(0, { scroll: false });
   $('#score').scrollTop = 0;
   keepAwake();
@@ -2049,6 +2050,7 @@ function showBeat(k, n, total, isCount = false) {
 function tick() {
   if (!autoOn) return;
   $('#btnPlay').textContent = '■ 停止';
+  setFab(true);
   if (unitsLeft <= 0) {
     if (pos >= blocks.length - 1) { stopAuto(); toast('最後まで進みました'); return; }
     const before = effBpm(pos);
@@ -2081,12 +2083,20 @@ function stopAuto() {
   autoOn = false;
   clearTimeout(tickTimer);
   $('#btnPlay').textContent = '▶ 開始';
+  setFab(false);
   clearNow();
   if (blocks.length) setPos(pos, { scroll: false }); // その場で止める(スクロールもレイアウトも動かさない)
+}
+function setFab(on) {
+  const f = $('#fab');
+  f.classList.toggle('run', on);
+  f.querySelector('.fi').textContent = on ? '■' : '▶';
+  f.querySelector('.fl').textContent = on ? '停止' : played ? '次の行から' : '開始';
 }
 function setMode(auto) {
   autoMode = auto;
   if (!auto) stopAuto();
+  $('#fab').classList.toggle('hidden', !auto);
   $('#score').classList.toggle('auto', auto); // 自動モードの間は、コードの上に拍のカウントを置く段を常に空けておく(開始・停止で画面が動かない)
   $('#modeManual').classList.toggle('on', !auto);
   $('#modeAuto').classList.toggle('on', auto);
@@ -2123,6 +2133,14 @@ $('#bpmBox').addEventListener('click', (e) => {
 // ---------- キー / ペダル ----------
 // ペダル(キーボードとして接続されるもの)の割り当ては、設定画面で自由に変えられる
 let capturing = null; // 割り当て待ちの動作名
+// ペダルと同じ動作(自動モード): 動いていれば停止、止まっていれば次の行の頭から開始(曲を開いて最初の開始だけは今の行から)
+function pedalToggle() {
+  if (autoOn) stopAuto();
+  else if (!played) startAuto();
+  else if (pos < blocks.length - 1) { jumpTo(pos + 1); startAuto(); }
+  else next();
+}
+$('#fab').onclick = pedalToggle;
 document.addEventListener('keydown', (e) => {
   if (capturing) return;
   if ($('#player').classList.contains('hidden') || document.querySelector('dialog[open]')) return;
@@ -2131,10 +2149,7 @@ document.addEventListener('keydown', (e) => {
   const has = (a) => (settings.keys[a] || []).includes(k);
   if (autoMode && (has('next') || has('play'))) { // 自動モードのペダル: 1回で停止、もう1回で次の行から開始
     if (e.repeat) return e.preventDefault();
-    if (autoOn) stopAuto();
-    else if (!played) startAuto();
-    else if (pos < blocks.length - 1) { jumpTo(pos + 1); startAuto(); }
-    else next();
+    pedalToggle();
   } else if (has('play') && autoMode) { if (!e.repeat) autoOn ? stopAuto() : startAuto(); }
   else if (has('next')) { if (!e.repeat) next(); }
   else if (has('prev')) { if (!e.repeat) prev(); }
