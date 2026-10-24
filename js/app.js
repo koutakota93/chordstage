@@ -1446,6 +1446,7 @@ async function openSong(id, ctx = null) {
   $('#btnMemoMode').classList.remove('on');
   showView('player');
   renderPlayer();
+  played = false;
   setPos(0, { scroll: false });
   $('#score').scrollTop = 0;
   keepAwake();
@@ -1944,6 +1945,7 @@ $('#grDown').onclick = () => setGroup((cur.groupLines || DEFAULT_GROUP) - 1);
 // ---------- 自動モード(テンポに合わせて進行) ----------
 let autoMode = false;
 let autoOn = false;
+let played = false; // この曲で、一度でも自動で再生したか(ペダル1つのモードで、最初の開始は今の行から)
 let unitIdx = 0;    // いまの行の中の位置(16分音符単位)
 let unitsLeft = 0;  // いまの行の残り
 let nextAt = 0;
@@ -2005,6 +2007,7 @@ function tick() {
 function startAuto(startUnit = 0) {
   if (autoOn || !blocks.length) return;
   autoOn = true;
+  played = true;
   unitIdx = startUnit;
   unitsLeft = lineUnits(pos) - startUnit;
   nextAt = performance.now();
@@ -2067,6 +2070,7 @@ document.addEventListener('keydown', (e) => {
   if (autoMode && settings.pedalToggle && (has('next') || has('play'))) { // ペダル1つ: 1回で停止、もう1回で次の行から開始
     if (e.repeat) return e.preventDefault();
     if (autoOn) stopAuto();
+    else if (!played) startAuto();
     else if (pos < blocks.length - 1) { jumpTo(pos + 1); startAuto(); }
     else next();
   } else if (has('play') && autoMode) { if (!e.repeat) autoOn ? stopAuto() : startAuto(); }
@@ -2076,6 +2080,14 @@ document.addEventListener('keydown', (e) => {
   else if (has('prevSong')) { if (!e.repeat) gotoSong(-1); }
   else return;
   e.preventDefault();
+  // ボタンにフォーカスが残っていると、スペースやEnterのキーを離したときにそのボタンが押されたことになり、
+  // 停止した直後に開始し直してしまう(ペダルが「開始」ボタンを押し直す)。フォーカスを外し、キーを離したときの動作も止める
+  if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+});
+document.addEventListener('keyup', (e) => {
+  if ($('#player').classList.contains('hidden') || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+  const all = Object.values(settings.keys).flat();
+  if (all.includes(e.key) && !document.querySelector('dialog[open]')) e.preventDefault();
 });
 const KEY_ACTIONS = [['next', '次へ(次の行)'], ['prev', '前へ(前の行)'], ['play', '開始/停止(自動モード)'], ['nextSong', '次の曲(セットリスト)'], ['prevSong', '前の曲(セットリスト)']];
 const KEY_NAMES = { ' ': 'Space', ArrowRight: '→', ArrowLeft: '←', ArrowUp: '↑', ArrowDown: '↓', PageDown: 'PageDown', PageUp: 'PageUp', Enter: 'Enter', Backspace: 'Backspace' };
