@@ -14,7 +14,7 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 
 // ---------- 設定 ----------
 const DEFAULT_KEYS = { next: ['ArrowRight', 'ArrowDown', 'PageDown', 'Enter', ' '], prev: ['ArrowLeft', 'ArrowUp', 'PageUp', 'Backspace'], play: [' '], nextSong: [], prevSong: [] };
-const defaults = { autoFit: true, beatSync: true, beatEm: 2, followTempo: true, rangeOn: true, rangeStyle: 'bracket', colorsByTheme: {}, fontSize: 30, keys: DEFAULT_KEYS, lyricScale: 1, chordScale: 1, colors: {}, custom: null, preset: '', theme: 'dark', beatsPerChord: 4, click: false, countIn: true, tapJump: true };
+const defaults = { autoFit: true, beatSync: true, beatEm: 2, followTempo: true, rangeOn: true, rangeStyle: 'bracket', colorsByTheme: {}, fontSize: 30, keys: DEFAULT_KEYS, lyricScale: 1, chordScale: 1, colors: {}, custom: null, preset: '', theme: 'dark', beatsPerChord: 4, click: false, tapJump: true };
 let settings = { ...defaults };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('cs.settings') || '{}')); } catch {}
 const MIN_FONT = 4; // 小さい画面(スマホの縦持ちなど)でも、自動幅で全ての行が1段に収まるよう、下限を小さくしてある
@@ -1721,11 +1721,36 @@ const prev = () => jumpTo(pos - 1);
 $('#btnNext').onclick = next;
 $('#btnPrev').onclick = prev;
 
-// 譜面タップでジャンプ(行→その行、見出し→セクション先頭)
+// 譜面タップでジャンプ(コード→そのコードから、歌詞→その位置のコードから、行の余白→その行、見出し→セクション先頭)
+// 自動モードでは、タップしたコードの頭から再生する(止まっているときも、そこから始める)
+function chordAtPoint(e, blk) {
+  const cellEl = e.target.closest('.cell');
+  const own = e.target.closest('.ch');
+  let label = own && blk.chordEls.includes(own) ? own : null;
+  if (!label && cellEl && cellEl._it) {
+    let best = null;
+    for (const it of cellEl._it) {
+      if (!blk.chordEls.includes(it.label)) continue;
+      if (!best || it.mk.getBoundingClientRect().left <= e.clientX) best = it;
+    }
+    label = best && best.label;
+  }
+  return label ? blk.chordEls.indexOf(label) : -1;
+}
 $('#score').addEventListener('click', (e) => {
   if (memoMode || !settings.tapJump) return;
-  const target = e.target.closest('.blk') || e.target.closest('.sech');
-  if (target) jumpTo(Number(target.dataset.block));
+  const sech = e.target.closest('.sech');
+  if (sech) return jumpTo(Number(sech.dataset.block));
+  const target = e.target.closest('.blk');
+  if (!target) return;
+  const i = Number(target.dataset.block);
+  const k = chordAtPoint(e, blocks[i]);
+  if (!autoMode || k < 0) return jumpTo(i);
+  const tl = lineTL(i);
+  let start = 0;
+  for (let j = 0; j < k; j++) start += unitsOf(tl[j]);
+  if (autoOn) { setPos(i); unitIdx = start; unitsLeft = lineUnits(i) - start; nextAt = performance.now(); clearTimeout(tickTimer); tick(); }
+  else { setPos(i); startAuto(start); }
 });
 
 // コードの位置合わせ。コードは、必ずその歌詞の先頭の真上に置く(ずらさない)。
@@ -1921,7 +1946,6 @@ let autoMode = false;
 let autoOn = false;
 let unitIdx = 0;    // いまの行の中の位置(16分音符単位)
 let unitsLeft = 0;  // いまの行の残り
-let countUnits = 0; // カウントインの残り(16分音符単位。4拍=16)
 let nextAt = 0;
 let tickTimer = 0;
 let actx = null;
@@ -1960,42 +1984,29 @@ function showBeat(k, n, total, isCount = false) {
 
 function tick() {
   if (!autoOn) return;
-  if (countUnits > 0) {
-    const u = 16 - countUnits;
-    if (u % 4 === 0) {
-      click(u === 0);
-      const n = 4 - u / 4;
-      $('#btnPlay').textContent = '■ ' + n;
-      showBeat(0, n, 1, true); // 最初に弾くコードの上にカウントダウンを出す
-    }
-    countUnits--;
-  } else {
-    $('#btnPlay').textContent = '■ 停止';
-    if (unitsLeft <= 0) {
-      if (pos >= blocks.length - 1) { stopAuto(); toast('最後まで進みました'); return; }
-      const before = effBpm(pos);
-      setPos(pos + 1);
-      unitIdx = 0;
-      unitsLeft = lineUnits(pos);
-      if (effBpm(pos) !== before) toast('テンポ変更: ♩=' + before + ' → ' + effBpm(pos));
-    }
-    const ca = chordAt(pos, unitIdx);
-    const rel = ca ? unitIdx - ca.start : unitIdx;
-    if (unitIdx % 4 === 0) click(rel === 0);
-    if (ca && rel % 4 === 0) showBeat(ca.k, rel / 4 + 1, Math.ceil(ca.len / 4));
-    unitIdx++;
-    unitsLeft--;
+  $('#btnPlay').textContent = '■ 停止';
+  if (unitsLeft <= 0) {
+    if (pos >= blocks.length - 1) { stopAuto(); toast('最後まで進みました'); return; }
+    const before = effBpm(pos);
+    setPos(pos + 1);
+    unitIdx = 0;
+    unitsLeft = lineUnits(pos);
+    if (effBpm(pos) !== before) toast('テンポ変更: ♩=' + before + ' → ' + effBpm(pos));
   }
+  const ca = chordAt(pos, unitIdx);
+  const rel = ca ? unitIdx - ca.start : unitIdx;
+  if (unitIdx % 4 === 0) click(rel === 0);
+  if (ca && rel % 4 === 0) showBeat(ca.k, rel / 4 + 1, Math.ceil(ca.len / 4));
+  unitIdx++;
+  unitsLeft--;
   nextAt += 60000 / effBpm(pos) / 4;
   tickTimer = setTimeout(tick, Math.max(0, nextAt - performance.now()));
 }
-function startAuto() {
+function startAuto(startUnit = 0) {
   if (autoOn || !blocks.length) return;
   autoOn = true;
-  $('#score').classList.add('auto'); // コードの上に、拍のカウントを置く段を空ける
-  countUnits = settings.countIn ? 16 : 0;
-  unitIdx = 0;
-  unitsLeft = lineUnits(pos);
+  unitIdx = startUnit;
+  unitsLeft = lineUnits(pos) - startUnit;
   nextAt = performance.now();
   if (actx && actx.state === 'suspended') actx.resume();
   setPos(pos);
@@ -2005,13 +2016,13 @@ function stopAuto() {
   autoOn = false;
   clearTimeout(tickTimer);
   $('#btnPlay').textContent = '▶ 開始';
-  $('#score').classList.remove('auto');
   clearNow();
-  if (blocks.length) setPos(pos);
+  if (blocks.length) setPos(pos, { scroll: false }); // その場で止める(スクロールもレイアウトも動かさない)
 }
 function setMode(auto) {
   autoMode = auto;
   if (!auto) stopAuto();
+  $('#score').classList.toggle('auto', auto); // 自動モードの間は、コードの上に拍のカウントを置く段を常に空けておく(開始・停止で画面が動かない)
   $('#modeManual').classList.toggle('on', !auto);
   $('#modeAuto').classList.toggle('on', auto);
   $('#btnPlay').classList.toggle('hidden', !auto);
@@ -2212,7 +2223,7 @@ function openSettings() {
   $('#sChord').value = settings.chordScale; $('#oChord').textContent = Math.round(settings.chordScale * 100) + '%';
   $('#sTheme').value = settings.theme; $('#sBeats').value = settings.beatsPerChord;
   $('#sBeatSync').checked = settings.beatSync; $('#sBeatEm').value = settings.beatEm; $('#oBeat').textContent = settings.beatEm.toFixed(1) + 'em';
-  $('#sFollow').checked = settings.followTempo; $('#sCountIn').checked = settings.countIn; $('#sClick').checked = settings.click; $('#sTap').checked = settings.tapJump;
+  $('#sFollow').checked = settings.followTempo; $('#sClick').checked = settings.click; $('#sTap').checked = settings.tapJump;
   fillColorInputs();
   fillPresetSelect();
   renderKeyMap();
@@ -2234,7 +2245,7 @@ $('#settingsDlg').addEventListener('input', (e) => {
   if ($('#sTheme').value !== settings.theme) switchTheme($('#sTheme').value);
   settings.beatsPerChord = Math.max(1, Math.min(16, Number($('#sBeats').value) || 4));
   settings.beatSync = $('#sBeatSync').checked; settings.beatEm = Number($('#sBeatEm').value); $('#oBeat').textContent = settings.beatEm.toFixed(1) + 'em';
-  settings.followTempo = $('#sFollow').checked; settings.countIn = $('#sCountIn').checked; settings.click = $('#sClick').checked; settings.tapJump = $('#sTap').checked;
+  settings.followTempo = $('#sFollow').checked; settings.click = $('#sClick').checked; settings.tapJump = $('#sTap').checked;
   applySettings();
   if (!$('#player').classList.contains('hidden')) refit(); // 幅の設定などは、配置のやり直し(自動幅のときは合わせ直し)が要る
 });
