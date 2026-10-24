@@ -367,6 +367,12 @@
     <label class="chk"><input id="sFollow" type="checkbox"> 曲中のテンポ変化に従う(自動モード)</label>
     <label class="chk"><input id="sClick" type="checkbox"> クリック音を鳴らす</label>
     <label class="chk"><input id="sTap" type="checkbox"> 譜面をタップしてその位置へジャンプ</label>
+    <fieldset class="syncbox" id="installBox">
+      <legend>ホーム画面にインストール</legend>
+      <div class="row"><button type="button" id="btnInstall" class="primary" disabled>インストール</button><button type="button" id="btnDiag">インストールできないとき: 診断</button></div>
+      <p class="hint" id="installMsg"></p>
+      <pre id="diagOut" class="hidden"></pre>
+    </fieldset>
     <fieldset class="syncbox">
       <legend>色</legend>
       <label>プリセット(選んだあと、下で1色ずつ直せます)<select id="sPreset"></select></label>

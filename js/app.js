@@ -2465,6 +2465,62 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && !$('#player').classList.contains('hidden')) keepAwake();
 });
 
+// ---------- ホーム画面へのインストール ----------
+// Chromeのメニューから「インストールできない」と言われる端末でも、アプリ内のボタンから直接インストールを呼び出せることがある。
+// それでも出ないときは、診断で原因の手がかりを集める
+let installEvt = null;
+const isStandalone = () => matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches || navigator.standalone;
+function updateInstallUi() {
+  const b = $('#btnInstall');
+  b.disabled = !installEvt;
+  $('#installMsg').textContent = isStandalone() ? 'すでにインストールされたアプリとして起動しています。'
+    : installEvt ? 'この端末にインストールできます。「インストール」を押してください。'
+      : 'Chromeがインストールを許可していない状態です(もう少し待つと出ることがあります)。出ないときは「診断」を押してください。';
+}
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; updateInstallUi(); });
+window.addEventListener('appinstalled', () => { installEvt = null; toast('インストールしました'); updateInstallUi(); });
+$('#btnInstall').onclick = async () => {
+  if (!installEvt) return;
+  installEvt.prompt();
+  const r = await installEvt.userChoice.catch(() => ({}));
+  if (r.outcome === 'accepted') toast('インストールしています…');
+  installEvt = null;
+  updateInstallUi();
+};
+$('#btnDiag').onclick = async () => {
+  const out = $('#diagOut');
+  out.classList.remove('hidden');
+  const L = [];
+  const ok = (c, t) => L.push((c ? '○ ' : '× ') + t);
+  ok(location.protocol === 'https:' || location.hostname === 'localhost', 'HTTPSで開いている(' + location.protocol + ')');
+  ok(isStandalone(), 'すでにアプリとして起動中: ' + (isStandalone() ? 'はい' : 'いいえ'));
+  ok(!!navigator.serviceWorker && !!navigator.serviceWorker.controller, 'Service Workerが動いている');
+  try {
+    const link = document.querySelector('link[rel=manifest]');
+    const res = await fetch(link.href, { cache: 'no-cache' });
+    const m = await res.json();
+    ok(res.ok, 'manifestを読める(' + res.status + ')');
+    ok(m.name && m.start_url && ['standalone', 'fullscreen', 'minimal-ui'].includes(m.display), 'name / start_url / display: ' + [m.name, m.start_url, m.display].join(' / '));
+    for (const ic of m.icons || []) {
+      const u = new URL(ic.src, link.href).href;
+      const r = await fetch(u, { cache: 'no-cache' }).catch(() => null);
+      ok(r && r.ok && /image\/png/.test(r.headers.get('content-type') || ''), 'アイコン ' + ic.sizes + ' (' + (ic.purpose || 'any') + ')');
+    }
+  } catch (e) { ok(false, 'manifestの確認に失敗: ' + e.message); }
+  if (navigator.getInstalledRelatedApps) {
+    try { const a = await navigator.getInstalledRelatedApps(); L.push('・インストール済みの関連アプリ: ' + a.length + '件'); } catch {}
+  }
+  ok(!!installEvt, 'Chromeからインストール可能の合図(beforeinstallprompt)が来ている');
+  const m = navigator.userAgent.match(/Chrome\/([\d.]+)/);
+  L.push('・Chrome ' + (m ? m[1] : '不明') + ' / ' + (/Mobile/.test(navigator.userAgent) ? 'モバイル表示' : 'PC版サイト表示') + ' / 画面 ' + innerWidth + '×' + innerHeight);
+  L.push('');
+  L.push(!installEvt && !isStandalone()
+    ? '合図が来ていない場合の確認: ①Chromeの「PC版サイト」を切る ②すでに同じアプリが入っていないか(アプリ一覧・別のユーザー/セキュアフォルダ) ③Chromeと「Google Play開発者サービス」を最新にする ④Chromeの︙→「ホーム画面に追加」から、ショートカットとして追加する(アプリ扱いにならないが、起動はできる) ⑤一度このタブを閉じて開き直す。'
+    : '問題は見つかりませんでした。');
+  out.textContent = L.join('\n');
+};
+updateInstallUi();
+
 // ---------- 起動 ----------
 applySettings();
 updateAutoFitBtn();

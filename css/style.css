@@ -586,3 +586,4 @@ dialog label input:focus, dialog label select:focus, dialog textarea:focus { bor
 #player.focus .stage:has(#fab:not(.hidden)) #score { padding-right: 0; }
 #player.focus #fab { bottom: 70px; right: 14px; }
 @media (max-width: 760px) { #fab { width: 160px; height: 104px; gap: 10px; border-radius: 32px; } #fab .fi { font-size: 40px; } #fab .fl { font-size: 15px; } #player.focus .stage:has(#fab:not(.hidden)) #score { padding-right: 0; } }
+#diagOut { white-space: pre-wrap; font-size: 13px; line-height: 1.55; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px; max-height: 40vh; overflow: auto; }
