@@ -2732,7 +2732,7 @@ applySettings();
 updateAutoFitBtn();
 history.replaceState({ v: 'library' }, '');
 setTab(settings.view.tab);
-loadLibrary().then(importFromHash).then(() => { if (drive.isConfigured()) { drive.loadGis().catch(() => {}); updateSyncChip(); autoSync('start'); } });
+loadLibrary().then(() => { document.documentElement.dataset.csReady = '1'; }).then(importFromHash).then(() => { if (drive.isConfigured()) { drive.loadGis().catch(() => {}); updateSyncChip(); autoSync('start'); } });
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
