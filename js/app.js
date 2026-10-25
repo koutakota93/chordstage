@@ -2,6 +2,7 @@ import { parseSong, transposeChord, lineLyric, lineTimeline, isRhythmOnly, clean
 import * as db from './db.js';
 import { rinneToText } from './sites.js';
 import * as drive from './drive.js';
+import { parseTable, sameSong } from './repertoire.js';
 
 const $ = (s) => document.querySelector(s);
 const el = (tag, cls, text) => {
@@ -118,13 +119,16 @@ const markDeleted = (id) => { const t = getTomb(); t[id] = Date.now(); try { loc
 let songs = [];  // 通常の曲
 let trash = [];  // 削除した曲(あとで戻せる)
 let setlists = [];
+let repList = []; // レパートリー(歌ったことがある曲)
 async function loadLibrary() {
   const all = await db.allSongs();
   songs = all.filter((x) => !x.deletedAt);
   trash = all.filter((x) => x.deletedAt).sort((x, y) => y.deletedAt - x.deletedAt);
   setlists = (await db.allSetlists()).sort((x, y) => (y.updatedAt || 0) - (x.updatedAt || 0));
+  repList = await db.allRep();
   renderLibrary();
   renderSets();
+  renderRep();
   renderTrash();
 }
 const tagsOf = (s) => (s.tags || []).filter(Boolean);
@@ -297,6 +301,8 @@ function setTab(t) {
   applySettings();
   $('#tabSongs').classList.toggle('on', t === 'songs');
   $('#tabSets').classList.toggle('on', t === 'sets');
+  $('#tabRep').classList.toggle('on', t === 'rep');
+  $('#repPane').classList.toggle('hidden', t !== 'rep');
   $('#tabTrash').classList.toggle('on', t === 'trash');
   $('#songsPane').classList.toggle('hidden', t !== 'songs');
   $('#setsPane').classList.toggle('hidden', t !== 'sets');
@@ -304,6 +310,7 @@ function setTab(t) {
 }
 $('#tabSongs').onclick = () => setTab('songs');
 $('#tabSets').onclick = () => setTab('sets');
+$('#tabRep').onclick = () => setTab('rep');
 $('#tabTrash').onclick = () => setTab('trash');
 
 // ---------- 曲の操作(カードの「⋯」で出るメニュー) ----------
@@ -1036,6 +1043,7 @@ async function commitSong(raw, meta, old) {
     updatedAt: Date.now(),
   };
   await db.putSong(song);
+  if (repLink) { const e = repList.find((x) => x.id === repLink); if (e) { e.songId = song.id; e.updatedAt = Date.now(); await db.putRep(e); } repLink = null; }
   await loadLibrary();
   toast((old ? '更新しました(' : '保存しました(') + chordCount + ' コード)');
   return song;
@@ -1134,7 +1142,7 @@ document.querySelectorAll('dialog form').forEach((f) => f.addEventListener('keyd
 // 追加と更新はそのまま反映する。ほかの端末で削除された曲は、すぐには消さず「削除の確認」として結果に出し、
 // 残すものを選んでもらってから削除する(syncCtx に保留しておく)
 let syncCtx = null;
-const emptyReport = () => ({ addedSongs: [], updatedSongs: [], addedSets: [], updatedSets: [], pendingSongs: [], pendingSets: [], tombNew: {} });
+const emptyReport = () => ({ addedRep: [], updatedRep: [], addedSongs: [], updatedSongs: [], addedSets: [], updatedSets: [], pendingSongs: [], pendingSets: [], tombNew: {} });
 async function mergeIncoming(data) {
   const tombLocal = getTomb();
   const tombNew = {}; // 取り込む側で新しく分かった削除の記録
@@ -1156,6 +1164,15 @@ async function mergeIncoming(data) {
     if (!mine) { await db.putSetlist(x); rep.addedSets.push(x); }
     else if ((mine.updatedAt || 0) < (x.updatedAt || 0)) { await db.putSetlist(x); rep.updatedSets.push(x); }
   }
+  // レパートリー: 曲ごとに更新が新しい方を採用する。他の端末で削除したものは、確認なしでそのまま削除する
+  const localRep = await db.allRep();
+  for (const x of data.repertoire || []) {
+    if (!x || !x.id || !x.title || dead(x)) continue;
+    const mine = localRep.find((y) => y.id === x.id);
+    if (!mine) { await db.putRep(x); rep.addedRep.push(x); }
+    else if ((mine.updatedAt || 0) < (x.updatedAt || 0)) { await db.putRep(x); rep.updatedRep.push(x); }
+  }
+  for (const x of localRep) if (dead(x)) await db.deleteRep(x.id);
   // 他の端末で削除された曲は、削除の確認に回す(この端末で消した記録による削除は、そのまま確定)
   for (const x of localSongs) {
     if (tombNew[x.id] && tombNew[x.id] >= (x.updatedAt || 0)) rep.pendingSongs.push(x);
@@ -1181,6 +1198,7 @@ const payload = () => {
     app: 'chordstage', version: 2, exportedAt: new Date().toISOString(),
     songs: [...songs, ...trash].filter((x) => !pend.has(x.id)),
     setlists: setlists.filter((x) => !pend.has(x.id)),
+    repertoire: repList,
     deleted: mergeTomb(getTomb(), syncCtx ? syncCtx.tombNew : {}),
     settings: syncSettings(), settingsAt: getSettingsAt(),
   };
@@ -1268,7 +1286,7 @@ async function autoSync(reason) {
     const { rep } = await runDriveSync();
     lastRep = rep;
     const pend = rep.pendingSongs.length + rep.pendingSets.length;
-    const n = rep.addedSongs.length + rep.updatedSongs.length + rep.addedSets.length + rep.updatedSets.length;
+    const n = rep.addedSongs.length + rep.updatedSongs.length + rep.addedSets.length + rep.updatedSets.length + rep.addedRep.length + rep.updatedRep.length;
     if (pend) toast(`ほかの端末で削除された曲が ${pend}件あります。上の「☁」から確認できます`);
     else if (n || rep.settings) toast(`同期しました(曲の追加・更新 ${n}件${rep.settings ? '、設定も反映' : ''})`);
   } catch (e) {
@@ -1327,9 +1345,11 @@ function showSyncResult(rep, opt = {}) {
   lists.textContent = '';
   chips(lists, '追加された曲', rep.addedSongs.map((x) => x.title), 'add');
   chips(lists, '更新された曲', rep.updatedSongs.map((x) => x.title), 'upd');
+  chips(lists, '追加されたレパートリー', rep.addedRep.map((x) => x.title), 'add');
+  chips(lists, '更新されたレパートリー', rep.updatedRep.map((x) => x.title), 'upd');
   chips(lists, '追加されたセットリスト', rep.addedSets.map((x) => x.name), 'add');
   chips(lists, '更新されたセットリスト', rep.updatedSets.map((x) => x.name), 'upd');
-  if (!rep.addedSongs.length && !rep.updatedSongs.length && !rep.addedSets.length && !rep.updatedSets.length && !pend) {
+  if (!rep.addedSongs.length && !rep.updatedSongs.length && !rep.addedSets.length && !rep.updatedSets.length && !rep.addedRep.length && !rep.updatedRep.length && !pend) {
     lists.append(el('p', 'sdnone', rep.settings ? '曲の変更はありません。設定をドライブの内容に合わせました。' : '変更はありませんでした。端末とドライブは同じ内容です。'));
   }
   // 他の端末で削除された曲: 残したいものにチェック → 1クリックで、チェックしていないものを一括削除
@@ -1407,7 +1427,7 @@ $('#gdBackup').onclick = async () => {
   $('#gdBackup').disabled = true;
   try {
     toast('Googleドライブへ保存中…');
-    const r = await drive.backup(songs, setlists, getTomb());
+    const r = await drive.backup(songs, setlists, getTomb(), repList);
     toast(`保存しました: ${r.folder} / ${r.name}(${r.count}曲)`);
   } catch (e) { toast(e.message); }
   $('#gdBackup').disabled = !drive.isConfigured();
@@ -1475,6 +1495,155 @@ $('#restoreFile').onchange = async (e) => {
     $('#backupDlg').close();
     showSyncResult(rep, { viaDrive: false });
   } catch { toast('バックアップファイルを読み込めませんでした'); }
+};
+
+// ---------- レパートリー(歌ったことがある曲) ----------
+// 曲名とアーティストのリスト。コード譜(ライブラリの曲)と照合して連動する: 譜面があれば、タップで開く。なければ「＋ 譜面」から追加できる。
+// 連動は、曲名とアーティストの一致で自動に判定し、「＋ 譜面」から追加したものは、その曲を直接結び付ける(entry.songId)
+let repLink = null;   // いま「＋ 譜面」で追加しようとしているレパートリーのid
+let repEditId = null;
+const songOfRep = (e) => (e.songId && songs.find((s) => s.id === e.songId)) || songs.find((s) => sameSong(e, s)) || null;
+const ARTIST_BLANK = '(アーティスト不明)';
+function renderRep() {
+  const q = $('#repSearch').value.trim().toLowerCase();
+  const f = $('#repFilter').value;
+  const sort = $('#repSort').value;
+  const all = repList.map((e) => ({ e, song: songOfRep(e) }));
+  const have = all.filter((x) => x.song).length;
+  $('#repStat').textContent = all.length ? `全 ${all.length}曲 ・ コード譜あり ${have}曲 ・ なし ${all.length - have}曲` : '';
+  const list = all
+    .filter((x) => f === 'all' || (f === 'have' ? x.song : !x.song))
+    .filter((x) => !q || (x.e.title + ' ' + (x.e.artist || '') + ' ' + (x.e.note || '')).toLowerCase().includes(q));
+  const cmp = {
+    artist: (a, b) => (!a.e.artist - !b.e.artist) || ja(a.e.artist || '', b.e.artist || '') || ja(a.e.title, b.e.title),
+    title: (a, b) => ja(a.e.title, b.e.title),
+    added: (a, b) => (b.e.createdAt || 0) - (a.e.createdAt || 0),
+  }[sort];
+  list.sort(cmp);
+  const ul = $('#repList');
+  ul.textContent = '';
+  let last = null;
+  list.forEach(({ e, song }) => {
+    if (sort === 'artist' && (e.artist || ARTIST_BLANK) !== last) {
+      last = e.artist || ARTIST_BLANK;
+      ul.append(el('li', 'grp', last));
+    }
+    const li = el('li', 'rep' + (song ? ' has' : ''));
+    const mark = el('span', 'repmark', song ? '♪' : '');
+    const box = el('div', 'grow');
+    box.append(el('b', '', e.title));
+    const sub = [sort !== 'artist' && e.artist, e.note].filter(Boolean).join(' ・ ');
+    if (sub) box.append(el('small', '', sub));
+    li.append(mark, box);
+    if (song) {
+      li.append(el('span', 'badge site', 'コード譜あり'));
+      li.onclick = () => openSong(song.id);
+    } else {
+      const b = el('button', 'repbtn', '＋ 譜面');
+      b.type = 'button';
+      b.onclick = (ev) => { ev.stopPropagation(); addChartFor(e); };
+      li.append(b);
+      li.onclick = () => openRepEdit(e);
+    }
+    const menu = el('button', 'menubtn', '⋯');
+    menu.type = 'button'; menu.title = '変更・削除';
+    menu.onclick = (ev) => { ev.stopPropagation(); openRepEdit(e); };
+    li.append(menu);
+    ul.append(li);
+  });
+  $('#repEmpty').textContent = !all.length ? 'まだ曲がありません。「表から取り込む」で、スプレッドシートの曲名・アーティスト名をまとめて読み込めます。「＋ 曲を追加」で1曲ずつ追加もできます。'
+    : list.length ? '' : '該当する曲がありません';
+}
+['repSearch', 'repFilter', 'repSort'].forEach((id) => $('#' + id).addEventListener(id === 'repSearch' ? 'input' : 'change', renderRep));
+// コード譜がない曲: 追加画面を、曲名・アーティスト入りで開く(保存すると、この曲と連動する)
+function addChartFor(e) {
+  repLink = e.id;
+  importDraft = null;
+  openImport(null);
+  $('#iTitle').value = e.title; $('#iArtist').value = e.artist || '';
+  $('#iTitle').dataset.touched = '1'; if (e.artist) $('#iArtist').dataset.touched = '1';
+  $('#iQuery').value = (e.title + ' ' + (e.artist || '')).trim();
+  toast('サイトで譜面を探して、取り込んでください(保存すると、このレパートリーと連動します)');
+}
+$('#importDlg').addEventListener('close', () => { setTimeout(() => { if (!$('#importDlg').open) repLink = null; }, 0); });
+function openRepEdit(e) {
+  repEditId = e ? e.id : null;
+  $('#reHead').textContent = e ? 'レパートリーの変更' : 'レパートリーに追加';
+  $('#reTitle').value = e ? e.title : ''; $('#reArtist').value = e ? e.artist || '' : ''; $('#reNote').value = e ? e.note || '' : '';
+  const s = e && songOfRep(e);
+  $('#reLink').textContent = e ? (s ? 'コード譜と連動中: ' + s.title : 'コード譜はまだありません') : '';
+  $('#reDelete').classList.toggle('hidden', !e);
+  $('#repEditDlg').showModal();
+}
+$('#repAdd').onclick = () => openRepEdit(null);
+$('#reSave').onclick = async () => {
+  const title = $('#reTitle').value.trim();
+  if (!title) return toast('曲名を入力してください');
+  const old = repEditId && repList.find((x) => x.id === repEditId);
+  const e = old || { id: uid(), createdAt: Date.now() };
+  Object.assign(e, { title, artist: $('#reArtist').value.trim(), note: $('#reNote').value.trim(), updatedAt: Date.now() });
+  if (!old) {
+    const dup = repList.find((x) => sameSong(x, e));
+    if (dup) return toast('「' + dup.title + '」はすでにあります');
+  }
+  await db.putRep(e);
+  $('#repEditDlg').close();
+  await loadLibrary();
+  toast(old ? '変更しました' : 'レパートリーに追加しました');
+};
+$('#reDelete').onclick = async () => {
+  const e = repList.find((x) => x.id === repEditId);
+  if (!e || !confirm('「' + e.title + '」をレパートリーから削除します(コード譜は消えません)')) return;
+  markDeleted(e.id);
+  await db.deleteRep(e.id);
+  $('#repEditDlg').close();
+  await loadLibrary();
+  toast('削除しました');
+};
+// ライブラリの曲のうち、レパートリーにないものを、まとめて追加する
+$('#repFromLib').onclick = async () => {
+  const add = songs.filter((s) => !repList.some((e) => sameSong(e, s) || e.songId === s.id));
+  if (!add.length) return toast('ライブラリの曲は、すべてレパートリーにあります');
+  if (!confirm('ライブラリの曲のうち、レパートリーにない ' + add.length + '曲を追加します')) return;
+  for (const s of add) await db.putRep({ id: uid(), title: s.title, artist: s.artist || '', note: '', songId: s.id, createdAt: Date.now(), updatedAt: Date.now() });
+  await loadLibrary();
+  toast(add.length + '曲を追加しました');
+};
+// ---- 表(スプレッドシート)からの取り込み ----
+let riItems = [];
+function updateRiInfo() {
+  const r = parseTable($('#riText').value);
+  const seen = [];
+  riItems = r.items.filter((it) => {
+    if (repList.some((e) => sameSong(e, it)) || seen.some((x) => sameSong(x, it))) return false;
+    seen.push(it);
+    return true;
+  });
+  const dup = r.items.length - riItems.length;
+  const chart = riItems.filter((it) => songs.some((s) => sameSong(it, s))).length;
+  $('#riInfo').textContent = r.items.length
+    ? `${r.items.length}行を読みました(${r.header ? '見出しの行あり' : '見出しなし: 1列目=曲名、2列目=アーティスト'})。新しく追加: ${riItems.length}曲(うちコード譜あり ${chart}曲)/ すでにある・重複: ${dup}曲`
+    : '';
+  $('#riGo').disabled = !riItems.length;
+}
+$('#repImport').onclick = () => { $('#riText').value = ''; updateRiInfo(); $('#repImportDlg').showModal(); };
+$('#riText').addEventListener('input', updateRiInfo);
+$('#riFile').onchange = async (e) => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f) return;
+  $('#riText').value = await f.text();
+  updateRiInfo();
+};
+$('#riGo').onclick = async () => {
+  $('#riGo').disabled = true;
+  const t = Date.now();
+  for (const [i, it] of riItems.entries()) await db.putRep({ id: uid() + i, title: it.title, artist: it.artist, note: it.note || '', createdAt: t + i, updatedAt: t + i });
+  const n = riItems.length;
+  $('#repImportDlg').close();
+  await loadLibrary();
+  setTab('rep');
+  toast(n + '曲をレパートリーに追加しました');
 };
 
 // ---------- プレーヤー ----------

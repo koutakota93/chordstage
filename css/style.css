@@ -38,7 +38,7 @@ button.on { background: var(--accent); color: var(--accent-fg); font-weight: 700
 
 /* ライブラリ */
 .libbody { padding: 16px; overflow: auto; max-width: 900px; width: 100%; margin: 0 auto; }
-#search { width: 100%; padding: 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); }
+#search, #repSearch { width: 100%; padding: 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); }
 #songList { list-style: none; margin: 12px 0; padding: 0; display: grid; gap: 10px; }
 #songList li { padding: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; cursor: pointer; }
 #songList li b { font-size: 20px; }
@@ -507,8 +507,8 @@ button:disabled { opacity: .45; }
 .tabs button.on, .tabs button.on:hover { background: var(--accent); color: var(--accent-fg); box-shadow: 0 2px 10px var(--glow); }
 
 /* 一覧・カード・入力 */
-#search, .libtools select, .libtools input { border-radius: 14px; background: color-mix(in srgb, var(--panel) 92%, var(--bg)); border: 1px solid var(--line); transition: border-color .15s, box-shadow .15s; }
-#search:focus, .libtools select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--glow); outline: none; }
+#search, #repSearch, .libtools select, .libtools input { border-radius: 14px; background: color-mix(in srgb, var(--panel) 92%, var(--bg)); border: 1px solid var(--line); transition: border-color .15s, box-shadow .15s; }
+#search:focus, #repSearch:focus, .libtools select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--glow); outline: none; }
 #songList li.song, #setList li, #trashList li, #svList li { box-shadow: var(--shadow); transition: transform .12s, border-color .15s, box-shadow .15s; border-radius: 16px; }
 #songList li.song:active, #setList li:active { transform: scale(.992); }
 .badge { letter-spacing: .02em; }
@@ -587,3 +587,17 @@ dialog label input:focus, dialog label select:focus, dialog textarea:focus { bor
 #player.focus #fab { bottom: 70px; right: 14px; }
 @media (max-width: 760px) { #fab { width: 160px; height: 104px; gap: 10px; border-radius: 32px; } #fab .fi { font-size: 40px; } #fab .fl { font-size: 15px; } #player.focus .stage:has(#fab:not(.hidden)) #score { padding-right: 0; } }
 #diagOut { white-space: pre-wrap; font-size: 13px; line-height: 1.55; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px; max-height: 40vh; overflow: auto; }
+
+/* ---- レパートリー ---- */
+#repPane .row { margin-top: 0; }
+.repstat { margin: 4px 2px 10px; font-size: 14px; font-weight: 700; color: var(--dim); }
+#repList { list-style: none; margin: 12px 0; padding: 0; display: grid; gap: 8px; }
+#repList li.grp { padding: 14px 4px 2px; color: var(--accent); font-weight: 800; font-size: 14px; letter-spacing: .04em; }
+#repList li.rep { display: flex; align-items: center; gap: 10px; padding: 6px 4px 6px 12px; min-height: 60px; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); cursor: pointer; }
+#repList li.rep.has { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
+#repList li.rep b { font-size: 17px; }
+#repList li.rep small { display: block; color: var(--dim); margin-top: 2px; }
+.repmark { flex: none; width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; color: var(--accent-fg); background: var(--accent); }
+#repList li.rep:not(.has) .repmark { background: color-mix(in srgb, var(--fg) 12%, transparent); }
+.repbtn { min-height: 40px; padding: 0 14px; font-weight: 700; font-size: 14px; color: var(--accent); border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
+#repSearch { margin-top: 6px; }

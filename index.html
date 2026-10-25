@@ -22,7 +22,7 @@
     <button class="themebtn"></button>
     <button id="btnSettings">設定</button>
   </header>
-  <div class="tabs"><button id="tabSongs" class="on">曲</button><button id="tabSets">セットリスト</button><button id="tabTrash">削除した曲</button></div>
+  <div class="tabs"><button id="tabSongs" class="on">曲</button><button id="tabSets">セットリスト</button><button id="tabRep">レパートリー</button><button id="tabTrash">削除した曲</button></div>
   <div class="libbody">
     <div id="songsPane">
       <input id="search" type="search" placeholder="曲名・アーティスト・タグで検索">
@@ -65,6 +65,17 @@
       <div class="row"><button id="trashAll" class="danger hidden">すべて完全に削除</button></div>
       <ul id="trashList"></ul>
       <p id="trashEmpty" class="hint"></p>
+    </div>
+    <div id="repPane" class="hidden">
+      <div class="repstat" id="repStat"></div>
+      <div class="row"><button id="repAdd" class="primary">＋ 曲を追加</button><button id="repImport">表から取り込む</button><button id="repFromLib">ライブラリの曲を追加</button></div>
+      <input id="repSearch" type="search" placeholder="曲名・アーティストで検索">
+      <div class="libtools">
+        <label>表示<select id="repFilter"><option value="all">すべて</option><option value="have">コード譜あり</option><option value="none">コード譜なし</option></select></label>
+        <label>並び順<select id="repSort"><option value="artist">アーティスト順</option><option value="title">曲名順</option><option value="added">追加が新しい順</option></select></label>
+      </div>
+      <ul id="repList"></ul>
+      <p id="repEmpty" class="hint"></p>
     </div>
     <div id="setsPane" class="hidden">
       <div class="row"><button id="setNew" class="primary">＋ 新しいセットリスト</button></div>
@@ -192,6 +203,28 @@
     <label>カポ<input id="kdCapo" type="number" min="0" max="12"></label>
     <p class="hint">曲本体の設定は変わりません。このセットリストから開いたときだけ、ここで決めたキー・カポで表示します。</p>
     <div class="row end"><button type="button" id="kdReset">曲の設定に戻す</button><button type="button" id="kdSave" class="primary">保存</button></div>
+  </form>
+</dialog>
+
+<dialog id="repEditDlg">
+  <form method="dialog">
+    <h3 id="reHead">レパートリーに追加</h3>
+    <label>曲名<input id="reTitle"></label>
+    <label>アーティスト<input id="reArtist"></label>
+    <label>メモ(任意。キー・一緒にやった人・次回の課題など)<input id="reNote"></label>
+    <p class="hint" id="reLink"></p>
+    <div class="row end"><button type="button" id="reDelete" class="danger">削除</button><button value="cancel">キャンセル</button><button type="button" id="reSave" class="primary">保存</button></div>
+  </form>
+</dialog>
+
+<dialog id="repImportDlg">
+  <form method="dialog">
+    <h3>表から取り込む</h3>
+    <p class="hint">スプレッドシートで、曲名とアーティスト名の列(見出しの行ごと)を選んでコピーし、下に貼り付けます。CSVやテキストのファイルも読めます。1行目が「曲名」「アーティスト」などの見出しなら、その列を使います。見出しがなければ、1列目が曲名、2列目がアーティストです。</p>
+    <textarea id="riText" rows="8" placeholder="ここに貼り付け(例: 三文小説[Tab]King Gnu)"></textarea>
+    <div class="row"><label class="filebtn">ファイルから読む<input id="riFile" type="file" accept=".csv,.tsv,.txt,text/csv,text/plain,text/tab-separated-values" hidden></label></div>
+    <p id="riInfo" class="hint"></p>
+    <div class="row end"><button value="cancel">キャンセル</button><button type="button" id="riGo" class="primary" disabled>取り込む</button></div>
   </form>
 </dialog>
 
