@@ -1728,6 +1728,52 @@ function openYomi() {
 }
 $('#btnYomi').onclick = openYomi;
 $('#btnYomi2').onclick = openYomi;
+// 読み仮名を、日本語版Wikipediaの記事の冒頭(「米津 玄師(よねづ けんし、…)」の形)から調べる。結果は入力欄に入れるだけで、保存は「保存」を押したとき
+const KANA_ONLY = /^[ぁ-ゟ゠-ヿー・\s　＝=]+$/;
+async function lookupYomi(name) {
+  const url = 'https://ja.wikipedia.org/w/api.php?action=query&format=json&origin=*&redirects=1&prop=extracts&exintro=1&explaintext=1&exchars=400&generator=search&gsrlimit=4&gsrsearch=' + encodeURIComponent(name);
+  const j = await (await fetch(url)).json();
+  const pages = Object.values((j.query && j.query.pages) || {}).sort((a, b) => a.index - b.index);
+  const key = toHira(name).replace(/[\s　・]/g, '');
+  for (const pg of pages) {
+    const t = toHira(pg.title || '').replace(/[\s　・]/g, '');
+    if (!(t.includes(key) || key.includes(t))) continue;
+    const ex = pg.extract || '';
+    if (!/歌手|ミュージシャン|バンド|シンガー|ユニット|音楽|アーティスト|グループ|作曲家|ギタリスト|ラッパー|アイドル/.test(ex)) continue;
+    const m = ex.match(/[（(]([^）)]{1,60})[）)]/);
+    if (!m) continue;
+    const seg = m[1].split(/[、,，;；]/).map((x) => x.trim()).find((x) => x && KANA_ONLY.test(x));
+    if (seg) return toHira(seg).replace(/[\s　]+/g, '');
+  }
+  return '';
+}
+$('#yomiAuto').onclick = async () => {
+  const inputs = [...$('#yomiList').querySelectorAll('input')].filter((i) => !i.value.trim());
+  if (!inputs.length) return toast('読み仮名が未設定のアーティストはいません');
+  $('#yomiAuto').disabled = true;
+  let ok = 0;
+  for (const [n, i] of inputs.entries()) {
+    $('#yomiProg').textContent = `調べています… ${n + 1} / ${inputs.length}(${i.dataset.name})`;
+    try { const y = await lookupYomi(i.dataset.name); if (y) { i.value = y; i.classList.add('auto'); ok++; } } catch { $('#yomiProg').textContent = '調べられませんでした(ネット接続を確認してください)'; break; }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  $('#yomiAuto').disabled = false;
+  $('#yomiProg').textContent = `${ok} / ${inputs.length}件の読みが見つかりました(青い枠は自動で入れたもの。違っていたら直して、「保存」を押してください)`;
+};
+// 「名前[Tab]よみ」の形で貼り付けて、まとめて入れる
+$('#yomiPaste').onclick = () => {
+  const t = prompt('「名前[Tab]よみ」を1行に1組で貼り付けてください');
+  if (!t) return;
+  const map = {};
+  t.split('\n').forEach((l) => { const [n, y] = l.split(/\t|,/); if (n && y) map[n.trim()] = y.trim(); });
+  let c = 0;
+  $('#yomiList').querySelectorAll('input').forEach((i) => { if (map[i.dataset.name]) { i.value = map[i.dataset.name]; i.classList.add('auto'); c++; } });
+  toast(c + '件に入れました。「保存」を押してください');
+};
+$('#yomiCopy').onclick = async () => {
+  const names = [...$('#yomiList').querySelectorAll('input')].filter((i) => !i.value.trim()).map((i) => i.dataset.name).join('\n');
+  try { await navigator.clipboard.writeText(names); toast('読みが未設定の名前をコピーしました'); } catch { toast('コピーできませんでした'); }
+};
 $('#yomiSave').onclick = () => {
   const map = { ...(settings.artistYomi || {}) };
   $('#yomiList').querySelectorAll('input').forEach((i) => { const v = toHira(i.value); if (v) map[i.dataset.name] = v; else delete map[i.dataset.name]; });
