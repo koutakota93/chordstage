@@ -1092,6 +1092,39 @@ async function importFromHash() {
 }
 window.addEventListener('hashchange', importFromHash);
 
+// Androidの「共有」から届いた内容を取り込む(manifestの share_target)。
+// ・譜面の文字を選んで「共有 → ChordStage」: そのまま曲として追加して開く
+// ・ページのURLだけを「共有」: 追加画面にURLと曲名を入れておく(続けて譜面を共有すると、そのURLを付けて追加する。15分以内)
+const stripSite = (t) => cleanTitle(String(t || '').replace(/\s*[-|｜–—:：]\s*(ChordWiki|U-?FRET|ユーフレット|J-?Total|リンネ|コードブック|ギターコード|コード譜|Ultimate Guitar)[^]*$/i, ''));
+async function importFromShare() {
+  const q = new URLSearchParams(location.search);
+  if (!['text', 'url', 'title'].some((k) => q.has(k))) return;
+  history.replaceState(null, '', location.pathname);
+  const text = q.get('text') || '';
+  let url = q.get('url') || (text.match(/https?:\/\/\S+/) || [''])[0];
+  const title = q.get('title') || '';
+  const body = text.replace(/https?:\/\/\S+/g, '').trim();
+  let pend = null;
+  try { pend = JSON.parse(localStorage.getItem('cs.shareUrl') || 'null'); } catch {}
+  if (pend && Date.now() - pend.at > 15 * 60000) pend = null;
+  const looksChart = body.length > 30 && (/\{\s*(title|t|c|comment)\s*:/i.test(body) || /\[[A-G][^\]]*\]/.test(body) || /^\s*[A-G][#b]?(m|M|maj|sus|dim|aug|add|7|\/)?[\w#b/()]*(\s+[A-G][#b]?[\w#b/()]*)+\s*$/m.test(body));
+  if (looksChart) {
+    if (!url && pend) url = pend.url;
+    const old = url && songs.find((x) => x.url === url);
+    const song = await commitSong(body, { title: old ? old.title : stripSite((pend && pend.title) || title), artist: old ? old.artist : '', url }, old);
+    if (song) { try { localStorage.removeItem('cs.shareUrl'); } catch {} openSong(song.id); }
+    return;
+  }
+  if (url) {
+    try { localStorage.setItem('cs.shareUrl', JSON.stringify({ url, title, at: Date.now() })); } catch {}
+    importDraft = null;
+    openImport(null);
+    $('#iUrl').value = url;
+    if (title) { $('#iTitle').value = stripSite(title); $('#iTitle').dataset.touched = '1'; }
+    toast('URLを受け取りました。続けて、ページの譜面の文字を選んで「共有 → ChordStage」を押してください');
+  }
+}
+
 // 2画面で使う: アプリから開いたChordWikiのウィンドウでブックマークを押すと、ここへ譜面が届く
 window.addEventListener('message', async (e) => {
   const d = e.data;
@@ -2535,7 +2568,7 @@ applySettings();
 updateAutoFitBtn();
 history.replaceState({ v: 'library' }, '');
 setTab(settings.view.tab);
-loadLibrary().then(importFromHash).then(() => { if (drive.isConfigured()) { drive.loadGis().catch(() => {}); updateSyncChip(); autoSync('start'); } });
+loadLibrary().then(importFromHash).then(importFromShare).then(() => { if (drive.isConfigured()) { drive.loadGis().catch(() => {}); updateSyncChip(); autoSync('start'); } });
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
