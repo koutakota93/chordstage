@@ -1652,6 +1652,29 @@ const agoText = (e) => {
   const d = Math.floor((Date.now() - e.lastPlayedAt) / 86400000);
   return d <= 0 ? '今日' : d < 31 ? d + '日前' : d < 365 ? Math.floor(d / 30) + 'か月前' : Math.floor(d / 365) + '年前';
 };
+// 譜面(コード譜がある曲)から、曲の特徴を自動で推定する: テンポ・マイナーコードの割合・リズム表記の細かさ
+const featCache = new Map();
+function songFeatures(song) {
+  if (!song) return null;
+  const key = song.id + ':' + (song.updatedAt || 0);
+  if (featCache.has(key)) return featCache.get(key);
+  let f = null;
+  try {
+    const p = parseSong(song.raw, { title: song.title, artist: song.artist });
+    const chords = p.sections.flatMap((sc) => sc.lines.flatMap((l) => (l.segs || []).filter((g) => g.chord).map((g) => g.chord)));
+    if (chords.length >= 4) {
+      const minor = chords.filter((c) => /^[A-G][#b]?(m(?!aj)|min|dim)/.test(c)).length / chords.length;
+      const fine = (song.raw.match(/[=≧]/g) || []).length;
+      const bpm = song.bpm || p.bpm || 0;
+      let en = !bpm ? 0 : bpm <= 80 ? 1 : bpm <= 95 ? 2 : bpm <= 115 ? 3 : bpm <= 135 ? 4 : 5;
+      if (en) { if (fine > 8) en = Math.min(5, en + 0.5); if (minor > 0.55) en = Math.max(1, en - 0.5); en = Math.round(en); }
+      f = { bpm, minor, fine, energy: en, mood: minor > 0.55 ? 'マイナー調(切ない・しっとり寄り)' : minor < 0.2 ? 'メジャー調(明るい寄り)' : '' };
+    }
+  } catch {}
+  featCache.set(key, f);
+  return f;
+}
+const effEnergy = (e, song) => e.energy || ((songFeatures(song) || {}).energy || 0);
 function logPlaySong(songId) {
   const now = Date.now();
   repList.filter((e) => { const sg = songOfRep(e); return sg && sg.id === songId; }).forEach((e) => { e.plays = (e.plays || 0) + 1; e.lastPlayedAt = now; e.updatedAt = now; db.putRep(e); });
@@ -1684,7 +1707,10 @@ function showSortCard() {
   if (!e) return;
   $('#sdTitle').textContent = e.title;
   $('#sdArtist').textContent = [e.artist, e.note].filter(Boolean).join(' ・ ');
-  sortEnergy = new Set(e.energy ? [e.energy] : []); sortDiff = new Set(e.diff ? [e.diff] : []); sortTags = new Set(e.tags || []);
+  const ft = songFeatures(songOfRep(e));
+  $('#sdEst').classList.toggle('hidden', !ft);
+  $('#sdEst').textContent = ft ? `譜面からの推定: ${ft.energy ? '盛り上がり ' + ft.energy + '(' + ENERGY[ft.energy] + ')' : ''}${ft.bpm ? ' ・ BPM ' + ft.bpm : ''}${ft.mood ? ' ・ ' + ft.mood : ''}` : '';
+  sortEnergy = new Set(e.energy ? [e.energy] : ft && ft.energy ? [ft.energy] : []); // 未設定なら、推定を最初から選んでおく sortDiff = new Set(e.diff ? [e.diff] : []); sortTags = new Set(e.tags || []);
   chipGroup($('#sdEnergy'), [1, 2, 3, 4, 5].map((n) => [n, n + ' ' + ENERGY[n]]), sortEnergy, { single: true });
   chipGroup($('#sdDiff'), [1, 2, 3].map((n) => [n, DIFF[n]]), sortDiff, { single: true });
   chipGroup($('#sdTags'), tagPool().map((t) => [t, t]), sortTags);
@@ -1722,25 +1748,33 @@ const REC_PRESETS = [
 const eBucket = (n) => (!n ? '' : n <= 2 ? 'low' : n === 3 ? 'mid' : 'high');
 function scoreRep(e, song, p) {
   let sc = 1;
-  const why = [];
-  const eb = eBucket(e.energy);
+  const why = []; // { t: 説明, k: 'ok'(合っている) | 'unk'(情報がなくて判断できない) }
+  const ee = effEnergy(e, song), eb = eBucket(ee), est = !e.energy && ee;
   if (p.energy.length) {
-    if (!eb) sc += 0.3;
-    else if (p.energy.includes(eb)) { sc += 3; why.push(ENERGY[e.energy]); } else sc -= 2;
+    if (!eb) { sc += 0.3; why.push({ t: '盛り上がり: 不明', k: 'unk' }); }
+    else if (p.energy.includes(eb)) { sc += est ? 2 : 3; why.push({ t: '盛り上がり: ' + ENERGY[ee] + (est ? '(譜面から推定)' : ''), k: 'ok' }); } else sc -= 2;
   }
   const tb = tempoBucket(song && song.bpm);
-  if (p.tempo.length && tb) { if (p.tempo.includes(tb)) { sc += 2; why.push(TEMPO[tb] + 'テンポ'); } else sc -= 1.5; }
-  if (p.diff === 'safe') { if (e.diff === 1) { sc += 2.5; why.push('十八番'); } else if (e.diff === 3) sc -= 2; }
-  if (p.diff === 'try') { if (e.diff === 3) { sc += 2.5; why.push('挑戦中'); } else if (e.diff === 1) sc -= 1; }
+  if (p.tempo.length) {
+    if (!tb) why.push({ t: 'テンポ: 不明(コード譜なし)', k: 'unk' });
+    else if (p.tempo.includes(tb)) { sc += 2; why.push({ t: 'テンポ: ' + TEMPO[tb] + '(BPM ' + song.bpm + ')', k: 'ok' }); } else sc -= 1.5;
+  }
+  if (p.diff !== 'any') {
+    if (!e.diff) why.push({ t: '安定度: 未設定', k: 'unk' });
+    else if (p.diff === 'safe') { if (e.diff === 1) { sc += 2.5; why.push({ t: '安定度: 十八番', k: 'ok' }); } else if (e.diff === 3) sc -= 2; }
+    else if (e.diff === 3) { sc += 2.5; why.push({ t: '安定度: 挑戦中', k: 'ok' }); } else if (e.diff === 1) sc -= 1;
+  }
   if (p.tags.length) {
     const hit = (e.tags || []).filter((t) => p.tags.includes(t));
-    if (hit.length) { sc += 3 * Math.min(2, hit.length); why.push(...hit.map((t) => '#' + t)); } else sc -= 2;
+    if (hit.length) { sc += 3 * Math.min(2, hit.length); why.push({ t: 'タグ: ' + hit.join('・'), k: 'ok' }); }
+    else if (!(e.tags || []).length) why.push({ t: 'タグ: 未設定', k: 'unk' });
+    else sc -= 2;
   }
   if (p.fresh) {
-    if (!e.lastPlayedAt) { sc += 2; why.push('まだ記録なし'); }
+    if (!e.lastPlayedAt) { sc += 2; why.push({ t: '演奏の記録なし(まだ・または未記録)', k: 'unk' }); }
     else {
       const d = (Date.now() - e.lastPlayedAt) / 86400000;
-      if (d < 7) sc -= 3; else { sc += Math.min(3, d / 30); if (d >= 30) why.push('久しぶり(' + agoText(e) + ')'); }
+      if (d < 7) sc -= 3; else { sc += Math.min(3, d / 30); why.push({ t: '最後に演奏したのは ' + agoText(e), k: 'ok' }); }
     }
   }
   return { sc: sc + Math.random() * 1.5, why };
@@ -1767,7 +1801,7 @@ function renderRec() {
     const li = el('li');
     const box = el('div', 'grow');
     box.append(el('b', '', x.e.title), el('small', '', [x.e.artist, !x.song && 'コード譜なし'].filter(Boolean).join(' ・ ')));
-    if (x.why && x.why.length) { const r = el('div', 'chiprow'); x.why.slice(0, 4).forEach((w) => r.append(el('span', 'chip', w))); box.append(r); }
+    if (x.why && x.why.length) { const r = el('div', 'chiprow'); x.why.forEach((w) => r.append(el('span', 'chip ' + w.k, (w.k === 'ok' ? '✓ ' : '? ') + w.t))); box.append(r); } else box.append(el('div', 'hint', '指定に合う理由は見つかりませんでしたが、ほかに候補が少ないため選びました'));
     const acts = el('div', 'recacts');
     const mk = (t, fn, cls = '') => { const b = el('button', cls, t); b.type = 'button'; b.onclick = fn; acts.append(b); };
     if (x.song) mk('開く', () => { $('#recDlg').close(); openSong(x.song.id); });
@@ -1781,8 +1815,9 @@ function renderRec() {
 }
 function updateRecInfo() {
   const c = recCandidates();
-  const unsorted = c.filter((x) => !x.e.energy).length;
-  $('#recInfo').textContent = `対象 ${c.length}曲` + (unsorted ? ` ・ 盛り上がり未設定 ${unsorted}曲(「仕分け」で入れると、選曲の精度が上がります)` : '');
+  const unsorted = c.filter((x) => !effEnergy(x.e, x.song)).length;
+  const est = c.filter((x) => !x.e.energy && effEnergy(x.e, x.song)).length;
+  $('#recInfo').textContent = `対象 ${c.length}曲 ・ 盛り上がりが分かる曲 ${c.length - unsorted}曲` + (est ? `(うち譜面からの推定 ${est}曲)` : '') + (unsorted ? ` ・ 不明 ${unsorted}曲` : '') + '。✓=指定に合う理由、?=情報がなくて判断できなかった項目。「仕分け」で情報を入れると、理由と精度が良くなります。';
 }
 function saveRecPrefs() { try { localStorage.setItem('cs.recPrefs', JSON.stringify(recPrefs)); } catch {} updateRecInfo(); }
 function buildRecUi() {
