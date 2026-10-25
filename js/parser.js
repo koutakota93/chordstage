@@ -176,6 +176,28 @@ export function lineLyric(line) {
   return line.segs ? line.segs.map((s) => s.text || '').join('') : '';
 }
 
+// 小節線があるのに、コードが書かれていない小節は、前の小節の最後のコードを引き継いで、小節の頭に付ける。
+// 前の小節は、前の行でもよい。小節線のない行(コードと歌詞だけの行)には、この規則は使わない
+function inheritChords(song) {
+  let last = '';
+  song.sections.forEach((sc) => sc.lines.forEach((ln) => {
+    if (!ln.segs || !ln.segs.some((g) => g.bar)) return;
+    let group = [];
+    const flush = () => {
+      const has = group.some((g) => g.chord);
+      if (has) last = [...group].reverse().find((g) => g.chord).chord;
+      else if (last) {
+        const head = group.find((g) => !g.time);
+        const content = group.some((g) => (g.text && g.text.trim()) || g.rhythm);
+        if (head && content) { head.chord = last; head.inherited = true; }
+      }
+      group = [];
+    };
+    ln.segs.forEach((g) => { if (g.bar) flush(); else group.push(g); });
+    flush();
+  }));
+}
+
 export function parseSong(text, meta = {}) {
   const song = { title: meta.title || '', artist: meta.artist || '', key: '', capo: 0, bpm: 0, note: '', sections: [] };
   let sec = null;
@@ -262,6 +284,7 @@ export function parseSong(text, meta = {}) {
     }
     push({ segs: [{ chord: '', text: raw.replace(/\s+$/, '') }] });
   }
+  inheritChords(song);
   song.sections.forEach((s) => {
     while (s.lines.length && s.lines[s.lines.length - 1].blank) s.lines.pop();
   });
