@@ -205,6 +205,10 @@ async function toggleFlag(s, key) {
   await loadLibrary();
 }
 // ---- アーティスト一覧 → 曲リスト(Musicアプリ風) ----
+// 幅の狭い画面で、アーティストを開いたときは、履歴に1つ積む。端末の「戻る」で、アプリが閉じずに、アーティスト一覧へ戻る
+const narrow = () => matchMedia('(max-width: 760px)').matches;
+const pushArtist = () => { if (narrow() && !(history.state && history.state.art)) history.pushState({ v: 'library', art: 1 }, ''); };
+const popArtist = () => { if (history.state && history.state.art) history.back(); };
 let browseSel = '__all'; // 選んでいるアーティスト(__all: すべての曲)
 let browseOpen = false;  // 幅が狭いとき、曲リストを開いているか
 const ARTIST_NONE = '(アーティスト不明)';
@@ -227,7 +231,7 @@ function renderBrowse(list, ul) {
     const t = el('span', 'at');
     t.append(el('b', '', label), el('small', '', n + '曲'));
     b.append(avatar(key), t, el('i', 'chev', '›'));
-    b.onclick = () => { browseSel = key; browseOpen = true; renderBrowse(list, ul); $('#browseSongs').scrollTop = 0; };
+    b.onclick = () => { browseSel = key; browseOpen = true; pushArtist(); renderBrowse(list, ul); $('#browseSongs').scrollTop = 0; };
     return b;
   };
   nav.append(row('__all', 'すべての曲', list.length));
@@ -243,7 +247,7 @@ function renderBrowse(list, ul) {
   head.textContent = '';
   const back = el('button', 'bsback', '‹ アーティスト');
   back.type = 'button';
-  back.onclick = () => { browseOpen = false; renderBrowse(list, ul); };
+  back.onclick = () => { browseOpen = false; popArtist(); renderBrowse(list, ul); };
   const meta = el('div', 'bsmeta');
   meta.append(el('small', '', browseSel === '__all' ? 'ライブラリ' : 'アーティスト'), el('h2', '', browseSel === '__all' ? 'すべての曲' : browseSel), el('span', '', songsOf.length + '曲'));
   head.append(back, avatar(browseSel, 'xl'), meta);
@@ -1533,7 +1537,7 @@ function renderRep() {
     const t = el('span', 'at');
     t.append(el('b', '', label), el('small', '', n + '曲'));
     b.append(avatar(key), t, el('i', 'chev', '›'));
-    b.onclick = () => { repSel = key; repOpen = true; renderRep(); $('#repSongs').scrollTop = 0; };
+    b.onclick = () => { repSel = key; repOpen = true; pushArtist(); renderRep(); $('#repSongs').scrollTop = 0; };
     return b;
   };
   nav.append(row('__all', 'すべての曲', list.length));
@@ -1548,7 +1552,7 @@ function renderRep() {
   head.textContent = '';
   const back = el('button', 'bsback', '‹ アーティスト');
   back.type = 'button';
-  back.onclick = () => { repOpen = false; renderRep(); };
+  back.onclick = () => { repOpen = false; popArtist(); renderRep(); };
   const meta = el('div', 'bsmeta');
   meta.append(el('small', '', repSel === '__all' ? 'レパートリー' : 'アーティスト'), el('h2', '', repSel === '__all' ? 'すべての曲' : repSel), el('span', '', shown.length + '曲'));
   head.append(back, avatar(repSel, 'xl'), meta);
@@ -2216,6 +2220,7 @@ $('#btnUnfocus').onclick = () => {
   if (history.state && history.state.v === 'focus') history.back(); else setFocus(false);
 };
 window.addEventListener('popstate', (e) => {
+  if (!(e.state && e.state.art) && (browseOpen || repOpen)) { browseOpen = false; repOpen = false; renderLibrary(); renderRep(); } // 曲リストから、アーティスト一覧へ戻る
   const v = (e.state && e.state.v) || 'library';
   const view = ['library', 'setView', 'player'].find((id) => !$('#' + id).classList.contains('hidden'));
   if (v === 'library' && view !== 'library') { showView('library'); loadLibrary(); }
