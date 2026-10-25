@@ -436,7 +436,7 @@ li.swp.open .swact { box-shadow: -8px 0 12px -8px #0008; }
 
 /* ---- 曲リスト: アーティスト一覧 → 曲リスト(Musicアプリ風) ---- */
 #songsPane.browsing .libtools label:nth-child(2), #songsPane.browsing > .hint { display: none; }
-.libbody:has(#browse:not(.hidden)) { max-width: 1180px; }
+.libbody:has(#browse:not(.hidden)), .libbody:has(#repBrowse:not(.hidden)) { max-width: 1180px; }
 .browse { display: grid; grid-template-columns: minmax(230px, 34%) 1fr; gap: 14px; height: max(62dvh, 380px); margin: 12px 0; }
 .browse.hidden { display: none; }
 .artists, .bsongs { overflow-y: auto; overscroll-behavior: contain; border-radius: 18px; border: 1px solid var(--line); background: var(--panel); }
@@ -454,7 +454,7 @@ li.swp.open .swact { box-shadow: -8px 0 12px -8px #0008; }
   background: linear-gradient(135deg, hsl(var(--h) 72% 58%), hsl(calc(var(--h) + 45) 70% 38%)); box-shadow: 0 2px 8px hsl(var(--h) 70% 30% / .45), inset 0 1px 0 rgba(255,255,255,.25); text-shadow: 0 1px 2px rgba(0,0,0,.35); }
 .avatar.big { width: 84px; height: 84px; font-size: 38px; border-radius: 22px; }
 .bsongs { padding: 0 12px 12px; scrollbar-width: thin; }
-#bsHead { position: sticky; top: 0; z-index: 3; margin: 0 -12px 8px; padding: 18px 18px 14px; display: flex; align-items: center; gap: 16px;
+#bsHead, #repHead { position: sticky; top: 0; z-index: 3; margin: 0 -12px 8px; padding: 18px 18px 14px; display: flex; align-items: center; gap: 16px;
   background: linear-gradient(135deg, hsl(var(--h) 55% 30% / .85), var(--panel) 85%); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
 .bsmeta { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .bsmeta small { font-size: 11px; font-weight: 800; letter-spacing: .14em; color: color-mix(in srgb, var(--fg) 65%, transparent); }
@@ -468,7 +468,7 @@ li.swp.open .swact { box-shadow: -8px 0 12px -8px #0008; }
   .browse { grid-template-columns: 1fr; height: max(68dvh, 360px); }
   .browse:not(.open) .bsongs, .browse.open .artists { display: none; }
   .bsback { display: block; }
-  #bsHead { padding: 44px 16px 14px; }
+  #bsHead, #repHead { padding: 44px 16px 14px; }
   .avatar.big { width: 64px; height: 64px; font-size: 28px; border-radius: 18px; }
   .bsmeta h2 { font-size: 21px; }
 }
@@ -601,3 +601,7 @@ dialog label input:focus, dialog label select:focus, dialog textarea:focus { bor
 #repList li.rep:not(.has) .repmark { background: color-mix(in srgb, var(--fg) 12%, transparent); }
 .repbtn { min-height: 40px; padding: 0 14px; font-weight: 700; font-size: 14px; color: var(--accent); border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
 #repSearch { margin-top: 6px; }
+
+#repPane .browse { height: max(60dvh, 380px); }
+.bsongs #repList { margin: 4px 0 0; }
+.bsongs #repList li.rep { box-shadow: none; }

@@ -72,9 +72,12 @@
       <input id="repSearch" type="search" placeholder="曲名・アーティストで検索">
       <div class="libtools">
         <label>表示<select id="repFilter"><option value="all">すべて</option><option value="have">コード譜あり</option><option value="none">コード譜なし</option></select></label>
-        <label>並び順<select id="repSort"><option value="artist">アーティスト順</option><option value="title">曲名順</option><option value="added">追加が新しい順</option></select></label>
+        <label>並び順<select id="repSort"><option value="title">曲名順</option><option value="added">追加が新しい順</option></select></label>
       </div>
-      <ul id="repList"></ul>
+      <div id="repBrowse" class="browse">
+        <nav id="repArtists" class="artists"></nav>
+        <section id="repSongs" class="bsongs"><header id="repHead"></header><ul id="repList"></ul></section>
+      </div>
       <p id="repEmpty" class="hint"></p>
     </div>
     <div id="setsPane" class="hidden">

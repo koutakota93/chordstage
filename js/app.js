@@ -1500,6 +1500,8 @@ $('#restoreFile').onchange = async (e) => {
 // ---------- レパートリー(歌ったことがある曲) ----------
 // 曲名とアーティストのリスト。コード譜(ライブラリの曲)と照合して連動する: 譜面があれば、タップで開く。なければ「＋ 譜面」から追加できる。
 // 連動は、曲名とアーティストの一致で自動に判定し、「＋ 譜面」から追加したものは、その曲を直接結び付ける(entry.songId)
+let repSel = '__all'; // レパートリーで選んでいるアーティスト
+let repOpen = false;  // 幅が狭いとき、曲リストを開いているか
 let repLink = null;   // いま「＋ 譜面」で追加しようとしているレパートリーのid
 let repEditId = null;
 const songOfRep = (e) => (e.songId && songs.find((s) => s.id === e.songId)) || songs.find((s) => sameSong(e, s)) || null;
@@ -1514,25 +1516,49 @@ function renderRep() {
   const list = all
     .filter((x) => f === 'all' || (f === 'have' ? x.song : !x.song))
     .filter((x) => !q || (x.e.title + ' ' + (x.e.artist || '') + ' ' + (x.e.note || '')).toLowerCase().includes(q));
-  const cmp = {
-    artist: (a, b) => (!a.e.artist - !b.e.artist) || ja(a.e.artist || '', b.e.artist || '') || ja(a.e.title, b.e.title),
-    title: (a, b) => ja(a.e.title, b.e.title),
-    added: (a, b) => (b.e.createdAt || 0) - (a.e.createdAt || 0),
-  }[sort];
+  const cmp = { title: (a, b) => ja(a.e.title, b.e.title), added: (a, b) => (b.e.createdAt || 0) - (a.e.createdAt || 0) }[sort] || ((a, b) => ja(a.e.title, b.e.title));
   list.sort(cmp);
+  // アーティスト一覧 → 曲リスト(コード譜の一覧と同じ見た目)
+  const byArtist = new Map();
+  list.forEach((x) => { const a = (x.e.artist || '').trim() || ARTIST_NONE; if (!byArtist.has(a)) byArtist.set(a, []); byArtist.get(a).push(x); });
+  if (repSel !== '__all' && !byArtist.has(repSel)) repSel = '__all';
+  const nav = $('#repArtists');
+  nav.textContent = '';
+  const row = (key, label, n) => {
+    const b = el('button', 'artist' + (key === repSel ? ' on' : ''));
+    b.type = 'button';
+    const t = el('span', 'at');
+    t.append(el('b', '', label), el('small', '', n + '曲'));
+    b.append(avatar(key), t, el('i', 'chev', '›'));
+    b.onclick = () => { repSel = key; repOpen = true; renderRep(); $('#repSongs').scrollTop = 0; };
+    return b;
+  };
+  nav.append(row('__all', 'すべての曲', list.length));
+  let lastIni = '';
+  [...byArtist.keys()].sort((a, b) => (a === ARTIST_NONE) - (b === ARTIST_NONE) || ja(a, b)).forEach((n) => {
+    const ini = n === ARTIST_NONE ? '#' : initialOf({ title: n });
+    if (ini !== lastIni) { nav.append(el('div', 'ainit', ini)); lastIni = ini; }
+    nav.append(row(n, n, byArtist.get(n).length));
+  });
+  const shown = repSel === '__all' ? list : byArtist.get(repSel) || [];
+  const head = $('#repHead');
+  head.textContent = '';
+  const back = el('button', 'bsback', '‹ アーティスト');
+  back.type = 'button';
+  back.onclick = () => { repOpen = false; renderRep(); };
+  const meta = el('div', 'bsmeta');
+  meta.append(el('small', '', repSel === '__all' ? 'レパートリー' : 'アーティスト'), el('h2', '', repSel === '__all' ? 'すべての曲' : repSel), el('span', '', shown.length + '曲'));
+  head.append(back, avatar(repSel, 'big'), meta);
+  head.style.setProperty('--h', repSel === '__all' ? 40 : hueOf(repSel));
+  $('#repBrowse').classList.toggle('open', repOpen);
   const ul = $('#repList');
   ul.textContent = '';
-  let last = null;
-  list.forEach(({ e, song }) => {
-    if (sort === 'artist' && (e.artist || ARTIST_BLANK) !== last) {
-      last = e.artist || ARTIST_BLANK;
-      ul.append(el('li', 'grp', last));
-    }
+  shown.forEach(({ e, song }) => {
     const li = el('li', 'rep' + (song ? ' has' : ''));
     const mark = el('span', 'repmark', song ? '♪' : '');
     const box = el('div', 'grow');
     box.append(el('b', '', e.title));
-    const sub = [sort !== 'artist' && e.artist, e.note].filter(Boolean).join(' ・ ');
+    const sub = [repSel === '__all' && e.artist, e.note].filter(Boolean).join(' ・ ');
     if (sub) box.append(el('small', '', sub));
     li.append(mark, box);
     if (song) {
