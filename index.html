@@ -68,7 +68,7 @@
     </div>
     <div id="repPane" class="hidden">
       <div class="repstat" id="repStat"></div>
-      <div class="row"><button id="repAdd" class="primary">＋ 曲を追加</button><button id="repImport">表から取り込む</button><button id="repFromLib">ライブラリの曲を追加</button></div>
+      <div class="row"><button id="repRec" class="primary">🎲 今日の選曲</button><button id="repSort">仕分け</button><button id="repAdd">＋ 曲を追加</button><button id="repImport">表から取り込む</button><button id="repFromLib">ライブラリの曲を追加</button></div>
       <input id="repSearch" type="search" placeholder="曲名・アーティストで検索">
       <div class="libtools">
         <label>表示<select id="repFilter"><option value="all">すべて</option><option value="have">コード譜あり</option><option value="none">コード譜なし</option></select></label>
@@ -214,9 +214,56 @@
     <h3 id="reHead">レパートリーに追加</h3>
     <label>曲名<input id="reTitle"></label>
     <label>アーティスト<input id="reArtist"></label>
+    <div class="row">
+      <label>盛り上がり<select id="reEnergy"><option value="0">未設定</option><option value="1">1 しっとり</option><option value="2">2 おだやか</option><option value="3">3 ふつう</option><option value="4">4 盛り上がる</option><option value="5">5 アゲアゲ</option></select></label>
+      <label>安定度<select id="reDiff"><option value="0">未設定</option><option value="1">十八番(安定)</option><option value="2">ふつう</option><option value="3">挑戦中</option></select></label>
+    </div>
+    <label>ジャンル・雰囲気のタグ(カンマ区切り。例: ロック,懐メロ)<input id="reTags"></label>
     <label>メモ(任意。キー・一緒にやった人・次回の課題など)<input id="reNote"></label>
+    <p class="hint" id="rePlays"></p>
     <p class="hint" id="reLink"></p>
     <div class="row end"><button type="button" id="reDelete" class="danger">削除</button><button value="cancel">キャンセル</button><button type="button" id="reSave" class="primary">保存</button></div>
+  </form>
+</dialog>
+
+<dialog id="sortDlg">
+  <form method="dialog">
+    <h3>仕分け <small id="sdCount" class="hint"></small></h3>
+    <p class="hint">選曲に使う情報を、1曲ずつ、ざっくり入れていきます(後から直せます)。</p>
+    <div id="sdCard">
+      <div id="sdTitle" class="sdtitle"></div>
+      <div id="sdArtist" class="hint"></div>
+      <div class="sdlabel">盛り上がり</div>
+      <div class="chips seg5" id="sdEnergy"></div>
+      <div class="sdlabel">安定度</div>
+      <div class="chips" id="sdDiff"></div>
+      <div class="sdlabel">ジャンル・雰囲気(複数OK)</div>
+      <div class="chips" id="sdTags"></div>
+    </div>
+    <p class="hint" id="sdDone"></p>
+    <div class="row end"><button value="cancel">閉じる</button><button type="button" id="sdSkip">スキップ</button><button type="button" id="sdNext" class="primary">保存して次へ</button></div>
+  </form>
+</dialog>
+
+<dialog id="recDlg">
+  <form method="dialog">
+    <h3>🎲 今日の選曲</h3>
+    <div class="chips" id="recPresets"></div>
+    <div class="sdlabel">盛り上がり</div><div class="chips" id="recEnergy"></div>
+    <div class="sdlabel">テンポ</div><div class="chips" id="recTempo"></div>
+    <div class="sdlabel">安定度</div><div class="chips" id="recDiff"></div>
+    <div class="sdlabel">ジャンル・雰囲気</div><div class="chips" id="recTags"></div>
+    <div class="row">
+      <label>曲数<select id="recN"><option>3</option><option selected>5</option><option>8</option><option>10</option><option>15</option></select></label>
+      <label>並び<select id="recFlow"><option value="rise">だんだん盛り上げる</option><option value="mix">おまかせ</option></select></label>
+    </div>
+    <label class="chk"><input type="checkbox" id="recFresh"> 最近やっていない曲を優先</label>
+    <label class="chk"><input type="checkbox" id="recChart"> コード譜がある曲だけ</label>
+    <p class="hint" id="recInfo"></p>
+    <div class="row"><button type="button" id="recGo" class="primary">選曲する</button></div>
+    <ol id="recList"></ol>
+    <div class="row end hidden" id="recActions"><button type="button" id="recMakeSet" class="primary">セットリストにする</button></div>
+    <div class="row end"><button value="cancel">閉じる</button></div>
   </form>
 </dialog>
 

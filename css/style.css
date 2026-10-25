@@ -653,3 +653,18 @@ dialog label input:focus, dialog label select:focus, dialog textarea:focus { bor
   #library:not(.roomy) .bsback { top: 2px; left: 2px; min-height: 30px; font-size: 14px; }
   #library:not(.roomy) .avatar.xl { width: 44px; height: 44px; font-size: 20px; }
 }
+
+/* ---- 仕分け・今日の選曲 ---- */
+.sdtitle { font-size: 22px; font-weight: 800; margin: 6px 0 2px; }
+.sdlabel { margin: 12px 0 2px; font-size: 12px; font-weight: 800; letter-spacing: .08em; color: var(--dim); }
+dialog .chips { margin: 4px 0; gap: 6px; }
+dialog .chips button { min-height: 40px; padding: 0 12px; font-size: 14px; }
+#recList { list-style: none; margin: 12px 0 4px; padding: 0; display: grid; gap: 8px; counter-reset: rec; }
+#recList li { counter-increment: rec; display: flex; align-items: center; gap: 10px; padding: 10px 10px 10px 14px; background: var(--bg); border: 1px solid var(--line); border-radius: 14px; position: relative; }
+#recList li::before { content: counter(rec); flex: none; width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: 13px; color: var(--accent-fg); background: var(--accent); }
+#recList li b { font-size: 16px; }
+#recList li small { display: block; color: var(--dim); }
+#recList .chiprow { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+#recList .chip { font-size: 11px; padding: 1px 8px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 20%, transparent); }
+.recacts { display: flex; flex-direction: column; gap: 4px; flex: none; }
+.recacts button { min-height: 34px; padding: 0 10px; font-size: 13px; }
