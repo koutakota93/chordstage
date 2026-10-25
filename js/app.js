@@ -220,6 +220,8 @@ const yomiOf = (name) => { const y = (settings.artistYomi || {})[name]; return y
 const GYOU = ['あいうえおぁぃぅぇぉゔ', 'かきくけこ', 'さしすせそ', 'たちつてとっ', 'なにぬねの', 'はひふへほ', 'まみむめも', 'やゆよゃゅょ', 'らりるれろ', 'わをんゐゑゎ'];
 function artistKey(name) { // [区分, 見出し, 並びの文字]
   if (name === ARTIST_NONE) return [4, '#', ''];
+  const f = name.normalize('NFKC').trim()[0] || '';
+  if (/[A-Za-z]/.test(f)) return [1, f.toUpperCase(), name.normalize('NFKC').toLowerCase()]; // アルファベットで始まる名前は、読み仮名に関係なく、そのままアルファベット順
   const y = yomiOf(name);
   if (!y) return [3, '漢字(読み未設定)', name];
   const c = y.normalize('NFD')[0];
@@ -1711,7 +1713,7 @@ $('#recMakeSet').onclick = async () => {
 
 // ---- 漢字のアーティスト名の、読み仮名を設定する ----
 function openYomi() {
-  const names = [...new Set([...songs.map((x) => (x.artist || '').trim()), ...repList.map((x) => (x.artist || '').trim())])].filter((n) => n && hasKanji(n));
+  const names = [...new Set([...songs.map((x) => (x.artist || '').trim()), ...repList.map((x) => (x.artist || '').trim())])].filter((n) => n && hasKanji(n) && !/^[A-Za-zＡ-Ｚａ-ｚ]/.test(n)); // アルファベットで始まる名前は、読み仮名が要らない
   const map = settings.artistYomi || {};
   names.sort((a, b) => (!!map[a] - !!map[b]) || ja(a, b));
   const ul = $('#yomiList');
