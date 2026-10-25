@@ -1586,15 +1586,17 @@ function renderRep() {
     if (sub) box.append(el('small', '', sub));
     li.append(mark, box);
     if (song) {
-      li.append(el('span', 'badge site', 'コード譜あり'));
-      li.onclick = () => openSong(song.id);
+      const bd = el('button', 'badge site', 'コード譜');
+      bd.type = 'button'; bd.title = 'コード譜を開く';
+      bd.onclick = (ev) => { ev.stopPropagation(); openSong(song.id); };
+      li.append(bd);
     } else {
       const b = el('button', 'repbtn', '＋ 譜面');
       b.type = 'button';
       b.onclick = (ev) => { ev.stopPropagation(); addChartFor(e); };
       li.append(b);
-      li.onclick = () => openRepEdit(e);
     }
+    li.onclick = () => openRepDetail(e); // タップで、歌詞を表示する
     const menu = el('button', 'menubtn', '⋯');
     menu.type = 'button'; menu.title = '変更・削除';
     menu.onclick = (ev) => { ev.stopPropagation(); openRepEdit(e); };
@@ -1785,6 +1787,62 @@ $('#yomiSave').onclick = () => {
   renderLibrary(); renderRep();
   toast('読み仮名を保存しました');
 };
+
+// ---- レパートリーの曲をタップ: 歌詞を表示する ----
+// 歌詞は、(1) ライブラリのコード譜の歌詞 (2) 自分で貼り付けた歌詞、のどちらか。
+// 歌詞を検索して取り込む機能は、著作権の面から作らない。検索は、歌詞サイトを別のタブで開く
+function chartLyrics(song) {
+  const p = parseSong(song.raw, { title: song.title, artist: song.artist });
+  return p.sections.map((sc) => {
+    const lines = sc.lines.map((l) => (l.blank ? '' : lineLyric(l).replace(/[（(][ぁ-ゟ゠-ヿー・\s]+[)）]/g, '').replace(/\s+$/, ''))).filter((x, i, a) => x || (i && a[i - 1]));
+    return (sc.name ? '【' + sc.name + '】\n' : '') + lines.join('\n');
+  }).filter((t) => t.trim()).join('\n\n');
+}
+let repDetailId = null;
+function renderRepDetail() {
+  const e = repList.find((x) => x.id === repDetailId);
+  if (!e) return;
+  const song = songOfRep(e);
+  $('#rdTitle').textContent = e.title;
+  $('#rdArtist').textContent = [e.artist, e.note].filter(Boolean).join(' ・ ');
+  const own = (e.lyrics || '').trim();
+  const fromChart = !own && song ? chartLyrics(song) : '';
+  $('#rdSrc').textContent = own ? '貼り付けた歌詞' : fromChart ? 'コード譜の歌詞(' + song.title + ')' : '';
+  $('#rdLyrics').textContent = own || fromChart || '歌詞はまだありません。「歌詞を検索」で歌詞サイトを開いて、歌詞をコピーし、「歌詞を貼り付け」から入れると、ここに表示できます。';
+  $('#rdLyrics').classList.toggle('empty', !own && !fromChart);
+  $('#rdEditBox').classList.add('hidden');
+  $('#rdLyrics').classList.remove('hidden');
+  $('#rdOpen').classList.toggle('hidden', !song);
+  $('#rdAddChart').classList.toggle('hidden', !!song);
+}
+function openRepDetail(e) { repDetailId = e.id; renderRepDetail(); $('#repDetailDlg').showModal(); }
+$('#rdSearch').onclick = () => {
+  const e = repList.find((x) => x.id === repDetailId);
+  if (e) window.open('https://www.google.com/search?q=' + encodeURIComponent((e.title + ' ' + (e.artist || '') + ' 歌詞').trim()), '_blank', 'noopener');
+};
+$('#rdSearch2').onclick = () => {
+  const e = repList.find((x) => x.id === repDetailId);
+  if (e) window.open('https://www.uta-net.com/search/?Aselect=2&Keyword=' + encodeURIComponent(e.title) + '&Bselect=3&x=0&y=0', '_blank', 'noopener');
+};
+$('#rdEdit').onclick = async () => {
+  const e = repList.find((x) => x.id === repDetailId);
+  const box = $('#rdEditBox');
+  const open = box.classList.contains('hidden');
+  box.classList.toggle('hidden', !open);
+  $('#rdLyrics').classList.toggle('hidden', open);
+  if (open) { $('#rdText').value = e.lyrics || ''; }
+};
+$('#rdPaste').onclick = async () => { try { $('#rdText').value = await navigator.clipboard.readText(); } catch { toast('貼り付けできませんでした。入力欄を長押しして貼り付けてください'); } };
+$('#rdSave').onclick = async () => {
+  const e = repList.find((x) => x.id === repDetailId);
+  e.lyrics = $('#rdText').value.trim(); e.updatedAt = Date.now();
+  await db.putRep(e);
+  renderRepDetail();
+  toast('歌詞を保存しました');
+};
+$('#rdOpen').onclick = () => { const s = songOfRep(repList.find((x) => x.id === repDetailId)); $('#repDetailDlg').close(); if (s) openSong(s.id); };
+$('#rdAddChart').onclick = () => { const e = repList.find((x) => x.id === repDetailId); $('#repDetailDlg').close(); addChartFor(e); };
+$('#rdEditInfo').onclick = () => { const e = repList.find((x) => x.id === repDetailId); $('#repDetailDlg').close(); openRepEdit(e); };
 
 // ---- 表(スプレッドシート)からの取り込み ----
 let riItems = [];
