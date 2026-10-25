@@ -30,7 +30,7 @@ const PRESETS = [
   { id: 'green', name: 'グリーン(黒板風)', theme: 'dark', colors: { bg: '#0f2217', chord: '#ffe08a', lyric: '#e9f5ec', bar: '#86ad92', hl: '#2c6b46', hlChord: '#ffeaa8', hlLyric: '#ffffff', hlBar: '#c4e8d1', rngA: '#fde68a', rngB: '#a7f3d0', now: '#ffd23f', nowFg: '#1a1100' } },
   { id: 'paper', name: 'ペーパー(明るい場所)', theme: 'light', colors: { bg: '#fafaf7', chord: '#0a58c2', lyric: '#1c1c1c', bar: '#555b66', hl: '#ffe08a', hlChord: '#0b3b94', hlLyric: '#2b1d00', hlBar: '#5b4300', rngA: '#059669', rngB: '#2563eb', now: '#b3200a', nowFg: '#ffffff' } },
 ];
-const VIEW_DEFAULT = { sort: 'updated', group: 'none', style: 'browse', filter: 'all', tab: 'songs', fields: { artist: true, key: true, capo: true, bpm: false, tags: true, transpose: true, site: true } };
+const VIEW_DEFAULT = { sort: 'updated', group: 'none', style: 'browse', filter: 'all', tab: 'songs', fields: { artist: true, key: true, capo: true, bpm: false, tags: true, transpose: true, site: true }, density: 'compact' };
 settings.keys = { ...DEFAULT_KEYS, ...(settings.keys || {}) };
 settings.view = { ...VIEW_DEFAULT, ...(settings.view || {}), fields: { ...VIEW_DEFAULT.fields, ...((settings.view || {}).fields || {}) } };
 // 設定の同期: 端末ごとに違うもの(文字サイズ・開いているタブ)は除く。変えた時刻(cs.settingsAt)が新しい方を採用する
@@ -50,6 +50,8 @@ function applyRangeClass() {
 function applySettings() {
   document.documentElement.dataset.theme = settings.theme;
   applyRangeClass();
+  const lib = document.querySelector('#library');
+  if (lib) lib.classList.toggle('roomy', settings.view.density === 'roomy');
   document.documentElement.style.setProperty('--fs', settings.fontSize + 'px');
   document.documentElement.style.setProperty('--ly', settings.lyricScale);
   document.documentElement.style.setProperty('--cs', settings.chordScale);
@@ -244,7 +246,7 @@ function renderBrowse(list, ul) {
   back.onclick = () => { browseOpen = false; renderBrowse(list, ul); };
   const meta = el('div', 'bsmeta');
   meta.append(el('small', '', browseSel === '__all' ? 'ライブラリ' : 'アーティスト'), el('h2', '', browseSel === '__all' ? 'すべての曲' : browseSel), el('span', '', songsOf.length + '曲'));
-  head.append(back, avatar(browseSel, 'big'), meta);
+  head.append(back, avatar(browseSel, 'xl'), meta);
   head.style.setProperty('--h', browseSel === '__all' ? 40 : hueOf(browseSel));
   $('#browse').classList.toggle('open', browseOpen);
   ul.textContent = '';
@@ -1548,7 +1550,7 @@ function renderRep() {
   back.onclick = () => { repOpen = false; renderRep(); };
   const meta = el('div', 'bsmeta');
   meta.append(el('small', '', repSel === '__all' ? 'レパートリー' : 'アーティスト'), el('h2', '', repSel === '__all' ? 'すべての曲' : repSel), el('span', '', shown.length + '曲'));
-  head.append(back, avatar(repSel, 'big'), meta);
+  head.append(back, avatar(repSel, 'xl'), meta);
   head.style.setProperty('--h', repSel === '__all' ? 40 : hueOf(repSel));
   $('#repBrowse').classList.toggle('open', repOpen);
   const ul = $('#repList');
@@ -2523,7 +2525,7 @@ function openSettings() {
   $('#sChord').value = settings.chordScale; $('#oChord').textContent = Math.round(settings.chordScale * 100) + '%';
   $('#sTheme').value = settings.theme; $('#sBeats').value = settings.beatsPerChord;
   $('#sBeatSync').checked = settings.beatSync; $('#sBeatEm').value = settings.beatEm; $('#oBeat').textContent = settings.beatEm.toFixed(1) + 'em';
-  $('#sFollow').checked = settings.followTempo; $('#sClick').checked = settings.click; $('#sTap').checked = settings.tapJump;
+  $('#sFollow').checked = settings.followTempo; $('#sClick').checked = settings.click; $('#sTap').checked = settings.tapJump; $('#sDensity').value = settings.view.density === 'roomy' ? 'roomy' : 'compact';
   fillColorInputs();
   fillPresetSelect();
   renderKeyMap();
@@ -2545,7 +2547,7 @@ $('#settingsDlg').addEventListener('input', (e) => {
   if ($('#sTheme').value !== settings.theme) switchTheme($('#sTheme').value);
   settings.beatsPerChord = Math.max(1, Math.min(16, Number($('#sBeats').value) || 4));
   settings.beatSync = $('#sBeatSync').checked; settings.beatEm = Number($('#sBeatEm').value); $('#oBeat').textContent = settings.beatEm.toFixed(1) + 'em';
-  settings.followTempo = $('#sFollow').checked; settings.click = $('#sClick').checked; settings.tapJump = $('#sTap').checked;
+  settings.followTempo = $('#sFollow').checked; settings.click = $('#sClick').checked; settings.tapJump = $('#sTap').checked; settings.view.density = $('#sDensity').value;
   applySettings();
   if (!$('#player').classList.contains('hidden')) refit(); // 幅の設定などは、配置のやり直し(自動幅のときは合わせ直し)が要る
 });
