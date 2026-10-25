@@ -435,7 +435,7 @@ li.swp.open .swact { box-shadow: -8px 0 12px -8px #0008; }
 .blk.cur .note { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent); }
 
 /* ---- 曲リスト: アーティスト一覧 → 曲リスト(Musicアプリ風) ---- */
-#songsPane.browsing .libtools label:nth-child(2), #songsPane.browsing > .hint { display: none; }
+#songsPane.browsing > .hint { display: none; }
 .libbody:has(#browse:not(.hidden)), .libbody:has(#repBrowse:not(.hidden)) { max-width: 1180px; }
 .browse { display: grid; grid-template-columns: minmax(230px, 34%) 1fr; gap: 14px; height: max(62dvh, 380px); margin: 12px 0; }
 .browse.hidden { display: none; }
@@ -671,3 +671,12 @@ dialog .chips button { min-height: 40px; padding: 0 12px; font-size: 14px; }
 #recList .chip.ok { background: color-mix(in srgb, #34d399 24%, transparent); }
 #recList .chip.unk { background: color-mix(in srgb, var(--fg) 8%, transparent); color: var(--dim); }
 #sdEst { margin: 2px 0 6px; color: var(--accent); }
+
+/* ---- アーティストの並び・読み仮名 ---- */
+#songsPane:not(.browsing) .libtools label.artistsort, #songsPane:not(.browsing) .yomirow { display: none; }
+#songsPane.browsing .libtools label:nth-child(3) { display: none; } /* グループは、アーティスト一覧では使わない */
+.yomilist { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 8px; max-height: 50vh; overflow: auto; }
+.yomilist li { display: grid; grid-template-columns: minmax(90px, 40%) 1fr; gap: 10px; align-items: center; }
+.yomilist input { padding: 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); font-size: 16px; }
+.yomirow { margin: 4px 0 !important; }
+.yomirow button, #btnYomi2 { min-height: 36px; font-size: 13px; padding: 0 12px; }

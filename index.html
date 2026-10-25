@@ -31,6 +31,7 @@
           <option value="updated">更新が新しい順</option><option value="created">追加が新しい順</option>
           <option value="fav">お気に入り優先</option><option value="title">曲名</option><option value="artist">アーティスト</option><option value="key">キー</option>
         </select></label>
+        <label class="artistsort">アーティストの並び<select id="vArtistSort"><option value="name">名前(読み)順</option><option value="count">曲数が多い順</option></select></label>
         <label>グループ<select id="vGroup">
           <option value="none">なし</option><option value="artist">アーティスト</option><option value="initial">頭文字</option>
           <option value="key">キー</option><option value="site">出典サイト</option><option value="tags">タグ</option><option value="status">印(お気に入り/練習中)</option>
@@ -42,6 +43,7 @@
           <option value="browse">アーティスト一覧</option><option value="standard">標準</option><option value="compact">コンパクト</option><option value="cards">カード</option>
         </select></label>
       </div>
+      <div class="row yomirow"><button type="button" id="btnYomi">アーティストの読み仮名を設定</button></div>
       <details class="fieldsel"><summary>表示する項目</summary>
         <div class="fieldchecks">
           <label class="chk"><input type="checkbox" data-vf="artist"> アーティスト</label>
@@ -68,10 +70,11 @@
     </div>
     <div id="repPane" class="hidden">
       <div class="repstat" id="repStat"></div>
-      <div class="row"><button id="repRec" class="primary">🎲 今日の選曲</button><button id="repAdd">＋ 曲を追加</button><button id="repImport">表から取り込む</button><button id="repFromLib">ライブラリの曲を追加</button></div>
+      <div class="row"><button id="repRec" class="primary">🎲 今日の選曲</button><button id="repAdd">＋ 曲を追加</button><button id="repImport">表から取り込む</button><button id="repFromLib">ライブラリの曲を追加</button><button id="btnYomi2">読み仮名</button></div>
       <input id="repSearch" type="search" placeholder="曲名・アーティストで検索">
       <div class="libtools">
         <label>表示<select id="repFilter"><option value="all">すべて</option><option value="have">コード譜あり</option><option value="none">コード譜なし</option></select></label>
+        <label>アーティストの並び<select id="repArtistSort"><option value="name">名前(読み)順</option><option value="count">曲数が多い順</option></select></label>
         <label>並び順<select id="repSort"><option value="title">曲名順</option><option value="added">追加が新しい順</option></select></label>
       </div>
       <div id="repBrowse" class="browse">
@@ -206,6 +209,16 @@
     <label>カポ<input id="kdCapo" type="number" min="0" max="12"></label>
     <p class="hint">曲本体の設定は変わりません。このセットリストから開いたときだけ、ここで決めたキー・カポで表示します。</p>
     <div class="row end"><button type="button" id="kdReset">曲の設定に戻す</button><button type="button" id="kdSave" class="primary">保存</button></div>
+  </form>
+</dialog>
+
+<dialog id="yomiDlg">
+  <form method="dialog">
+    <h3>アーティストの読み仮名</h3>
+    <p class="hint">漢字の名前は、ここで入れた読み仮名の順に並びます(ひらがな・カタカナどちらでも)。入れていないものは、一覧の最後の「漢字(読み未設定)」にまとまります。</p>
+    <ul id="yomiList" class="yomilist"></ul>
+    <p class="hint" id="yomiEmpty"></p>
+    <div class="row end"><button value="cancel">キャンセル</button><button type="button" id="yomiSave" class="primary">保存</button></div>
   </form>
 </dialog>
 

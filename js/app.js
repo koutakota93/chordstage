@@ -30,7 +30,7 @@ const PRESETS = [
   { id: 'green', name: 'グリーン(黒板風)', theme: 'dark', colors: { bg: '#0f2217', chord: '#ffe08a', lyric: '#e9f5ec', bar: '#86ad92', hl: '#2c6b46', hlChord: '#ffeaa8', hlLyric: '#ffffff', hlBar: '#c4e8d1', rngA: '#fde68a', rngB: '#a7f3d0', now: '#ffd23f', nowFg: '#1a1100' } },
   { id: 'paper', name: 'ペーパー(明るい場所)', theme: 'light', colors: { bg: '#fafaf7', chord: '#0a58c2', lyric: '#1c1c1c', bar: '#555b66', hl: '#ffe08a', hlChord: '#0b3b94', hlLyric: '#2b1d00', hlBar: '#5b4300', rngA: '#059669', rngB: '#2563eb', now: '#b3200a', nowFg: '#ffffff' } },
 ];
-const VIEW_DEFAULT = { sort: 'updated', group: 'none', style: 'browse', filter: 'all', tab: 'songs', fields: { artist: true, key: true, capo: true, bpm: false, tags: true, transpose: true, site: true }, density: 'compact' };
+const VIEW_DEFAULT = { sort: 'updated', group: 'none', style: 'browse', filter: 'all', tab: 'songs', fields: { artist: true, key: true, capo: true, bpm: false, tags: true, transpose: true, site: true }, density: 'compact', artistSort: 'name' };
 settings.keys = { ...DEFAULT_KEYS, ...(settings.keys || {}) };
 settings.view = { ...VIEW_DEFAULT, ...(settings.view || {}), fields: { ...VIEW_DEFAULT.fields, ...((settings.view || {}).fields || {}) } };
 // 設定の同期: 端末ごとに違うもの(文字サイズ・開いているタブ)は除く。変えた時刻(cs.settingsAt)が新しい方を採用する
@@ -212,6 +212,30 @@ const popArtist = () => { if (history.state && history.state.art) history.back()
 let browseSel = '__all'; // 選んでいるアーティスト(__all: すべての曲)
 let browseOpen = false;  // 幅が狭いとき、曲リストを開いているか
 const ARTIST_NONE = '(アーティスト不明)';
+// ---- アーティストの並び: 名前(読み)順 / 曲数順。漢字の名前は、読み仮名を基に並べる ----
+const hasKanji = (t) => /[㐀-䶿一-鿿々〆]/.test(t);
+const toHira = (t) => String(t || '').normalize('NFKC').replace(/[ァ-ヶ]/g, (m) => String.fromCharCode(m.charCodeAt(0) - 0x60)).toLowerCase().trim();
+// 読み仮名: 設定した読み > 漢字を含まない名前はそのまま > なし(漢字で、読みが未設定)
+const yomiOf = (name) => { const y = (settings.artistYomi || {})[name]; return y ? toHira(y) : hasKanji(name) ? '' : toHira(name); };
+const GYOU = ['あいうえおぁぃぅぇぉゔ', 'かきくけこ', 'さしすせそ', 'たちつてとっ', 'なにぬねの', 'はひふへほ', 'まみむめも', 'やゆよゃゅょ', 'らりるれろ', 'わをんゐゑゎ'];
+function artistKey(name) { // [区分, 見出し, 並びの文字]
+  if (name === ARTIST_NONE) return [4, '#', ''];
+  const y = yomiOf(name);
+  if (!y) return [3, '漢字(読み未設定)', name];
+  const c = y.normalize('NFD')[0];
+  if (/[a-z]/.test(c)) return [1, c.toUpperCase(), y];
+  if (/[0-9]/.test(c)) return [0, '0-9', y];
+  const g = GYOU.find((x) => x.includes(c));
+  if (g) return [2, g[0] + '行', y];
+  return [0, '#', y];
+}
+function orderArtists(map) { // map: アーティスト名 → 曲の配列。戻り値: [{ name, head }]
+  const byCount = settings.view.artistSort === 'count';
+  const arr = [...map.keys()].map((name) => ({ name, k: artistKey(name), n: map.get(name).length }));
+  arr.sort((a, b) => (byCount ? (a.name === ARTIST_NONE) - (b.name === ARTIST_NONE) || b.n - a.n : 0) || a.k[0] - b.k[0] || ja(a.k[2], b.k[2]) || ja(a.name, b.name));
+  return arr.map((x) => ({ name: x.name, head: byCount ? '' : x.k[1] }));
+}
+function fillArtists(nav, map, row) { let last = null; orderArtists(map).forEach(({ name, head }) => { if (head && head !== last) { nav.append(el('div', 'ainit', head)); last = head; } nav.append(row(name, name, map.get(name).length)); }); }
 const artistOf = (s) => (s.artist || '').trim() || ARTIST_NONE;
 const hueOf = (t) => { let h = 0; for (const c of t) h = (h * 31 + c.codePointAt(0)) % 360; return h; };
 function avatar(name, cls = '') {
@@ -235,13 +259,7 @@ function renderBrowse(list, ul) {
     return b;
   };
   nav.append(row('__all', 'すべての曲', list.length));
-  const names = [...byArtist.keys()].sort((a, b) => (a === ARTIST_NONE) - (b === ARTIST_NONE) || ja(a, b));
-  let last = '';
-  names.forEach((n) => {
-    const ini = n === ARTIST_NONE ? '#' : initialOf({ title: n });
-    if (ini !== last) { nav.append(el('div', 'ainit', ini)); last = ini; }
-    nav.append(row(n, n, byArtist.get(n).length));
-  });
+  fillArtists(nav, byArtist, row);
   const songsOf = browseSel === '__all' ? list : byArtist.get(browseSel) || [];
   const head = $('#bsHead');
   head.textContent = '';
@@ -263,7 +281,7 @@ function renderLibrary() {
   const ul = $('#songList');
   ul.textContent = '';
   ul.className = v.style === 'standard' ? '' : v.style;
-  $('#vSort').value = v.sort; $('#vGroup').value = v.group; $('#vStyle').value = v.style; $('#vFilter').value = v.filter;
+  $('#vArtistSort').value = v.artistSort || 'name'; $('#vSort').value = v.sort; $('#vGroup').value = v.group; $('#vStyle').value = v.style; $('#vFilter').value = v.filter;
   document.querySelectorAll('[data-vf]').forEach((c) => { c.checked = !!v.fields[c.dataset.vf]; });
   const list = songs
     .filter((s) => v.filter === 'all' || (v.filter === 'fav' ? s.fav : s.practice))
@@ -292,6 +310,7 @@ function renderLibrary() {
   $('#emptyMsg').textContent = songs.length ? (list.length ? '' : '該当する曲がありません') : 'まだ曲がありません。「＋ 曲を追加」からChordWikiのコード譜を貼り付けてください。';
 }
 $('#search').oninput = renderLibrary;
+['vArtistSort', 'repArtistSort'].forEach((id) => $('#' + id).addEventListener('change', () => { settings.view.artistSort = $('#' + id).value; applySettings(); renderLibrary(); renderRep(); }));
 ['vSort', 'vGroup', 'vStyle', 'vFilter'].forEach((id) => $('#' + id).addEventListener('change', () => {
   settings.view[{ vSort: 'sort', vGroup: 'group', vStyle: 'style', vFilter: 'filter' }[id]] = $('#' + id).value;
   applySettings();
@@ -1516,6 +1535,7 @@ const ARTIST_BLANK = '(アーティスト不明)';
 function renderRep() {
   const q = $('#repSearch').value.trim().toLowerCase();
   const f = $('#repFilter').value;
+  $('#repArtistSort').value = settings.view.artistSort || 'name';
   const sort = $('#repSort').value;
   const all = repList.map((e) => ({ e, song: songOfRep(e) }));
   const have = all.filter((x) => x.song).length;
@@ -1541,12 +1561,7 @@ function renderRep() {
     return b;
   };
   nav.append(row('__all', 'すべての曲', list.length));
-  let lastIni = '';
-  [...byArtist.keys()].sort((a, b) => (a === ARTIST_NONE) - (b === ARTIST_NONE) || ja(a, b)).forEach((n) => {
-    const ini = n === ARTIST_NONE ? '#' : initialOf({ title: n });
-    if (ini !== lastIni) { nav.append(el('div', 'ainit', ini)); lastIni = ini; }
-    nav.append(row(n, n, byArtist.get(n).length));
-  });
+  fillArtists(nav, byArtist, row);
   const shown = repSel === '__all' ? list : byArtist.get(repSel) || [];
   const head = $('#repHead');
   head.textContent = '';
@@ -1692,6 +1707,35 @@ $('#recMakeSet').onclick = async () => {
   $('#recDlg').close();
   openSetView(set.id);
   toast('セットリストを作りました(' + ids.length + '曲)');
+};
+
+// ---- 漢字のアーティスト名の、読み仮名を設定する ----
+function openYomi() {
+  const names = [...new Set([...songs.map((x) => (x.artist || '').trim()), ...repList.map((x) => (x.artist || '').trim())])].filter((n) => n && hasKanji(n));
+  const map = settings.artistYomi || {};
+  names.sort((a, b) => (!!map[a] - !!map[b]) || ja(a, b));
+  const ul = $('#yomiList');
+  ul.textContent = '';
+  names.forEach((n) => {
+    const li = el('li');
+    const inp = el('input');
+    inp.value = map[n] || ''; inp.placeholder = 'ひらがなで(例: よねづけんし)'; inp.dataset.name = n;
+    li.append(el('b', '', n), inp);
+    ul.append(li);
+  });
+  $('#yomiEmpty').textContent = names.length ? '' : '漢字を含むアーティスト名がありません。';
+  $('#yomiDlg').showModal();
+}
+$('#btnYomi').onclick = openYomi;
+$('#btnYomi2').onclick = openYomi;
+$('#yomiSave').onclick = () => {
+  const map = { ...(settings.artistYomi || {}) };
+  $('#yomiList').querySelectorAll('input').forEach((i) => { const v = toHira(i.value); if (v) map[i.dataset.name] = v; else delete map[i.dataset.name]; });
+  settings.artistYomi = map;
+  applySettings();
+  $('#yomiDlg').close();
+  renderLibrary(); renderRep();
+  toast('読み仮名を保存しました');
 };
 
 // ---- 表(スプレッドシート)からの取り込み ----
