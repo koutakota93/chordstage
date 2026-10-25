@@ -106,6 +106,19 @@ function toast(msg) {
   }, 3500);
 }
 
+// ---------- 外部サイトを開く ----------
+// Androidでは、インストールしたアプリの中で window.open すると、アプリ内の簡易ブラウザで開き、アドレスバーがなく、ブックマークレットが使えない。
+// そこで、Chromeアプリ本体で開く(intent)。Chromeが無ければ、通常どおり開く
+const isAndroid = /Android/i.test(navigator.userAgent);
+function openExternal(url, name) {
+  if (isAndroid && /^https?:\/\//.test(url)) {
+    const u = new URL(url);
+    location.href = `intent://${u.host}${u.pathname}${u.search}${u.hash}#Intent;scheme=${u.protocol.slice(0, -1)};package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(url)};end`;
+    return;
+  }
+  window.open(url, name || '_blank', name ? '' : 'noopener');
+}
+
 // ---------- 画面の切り替え ----------
 // library(曲/セットリスト一覧) / setView(セットリストの中身) / player(譜面)
 function showView(name) {
@@ -941,7 +954,7 @@ $('#iSearch').onclick = () => {
   const q = $('#iQuery').value.trim() || $('#iTitle').value.trim();
   if (!q) return toast('曲名を入力してください');
   // ChordWiki内をWeb検索する(ChordWiki自体は自動取得できないため、結果は自分のブラウザで開く)
-  window.open('https://www.google.com/search?q=' + encodeURIComponent('site:' + $('#iSite').value + ' ' + q), '_blank', 'noopener');
+  openExternal('https://www.google.com/search?q=' + encodeURIComponent('site:' + $('#iSite').value + ' ' + q));
 };
 // 貼り付けたテキストを解析して、曲名・コード数を表示する
 function updateImportInfo() {
@@ -1142,7 +1155,7 @@ window.addEventListener('message', async (e) => {
   openSong(song.id); // 取り込んだ曲のコード譜を、そのまま開く
 });
 // アプリから開いたウィンドウ(window.opener が残る)でChordWikiを開く。ブラウザの分割画面/マルチウィンドウと併用する
-$('#iOpenCW').onclick = () => window.open('https://ja.chordwiki.org/', 'chordwiki');
+$('#iOpenCW').onclick = () => openExternal('https://ja.chordwiki.org/', 'chordwiki');
 
 // すべての画面(ダイアログ)は、画面の外(暗い部分)を押しても閉じる。
 // スライダーや文字の選択を操作中に、指が外へ出ただけでは閉じないよう、押し始めも外側だった場合に限る
@@ -1587,7 +1600,7 @@ function renderRep() {
     // 歌詞ボタン: タップすると、Googleで歌詞を検索する(別のタブで開く)
     const ly = el('button', 'repbtn lyr', '歌詞');
     ly.type = 'button'; ly.title = 'Googleで歌詞を検索';
-    ly.onclick = (ev) => { ev.stopPropagation(); window.open('https://www.google.com/search?q=' + encodeURIComponent((e.title + ' ' + (e.artist || '') + ' 歌詞').trim()), '_blank', 'noopener'); };
+    ly.onclick = (ev) => { ev.stopPropagation(); openExternal('https://www.google.com/search?q=' + encodeURIComponent((e.title + ' ' + (e.artist || '') + ' 歌詞').trim())); };
     li.append(mark, box, ly);
     if (song) {
       li.append(el('span', 'badge site', 'コード譜あり'));
@@ -2631,7 +2644,7 @@ $('#btnInfo').onclick = () => {
   $('#infoDlg').showModal();
 };
 $('#fTap').onclick = makeTapper((bpm) => { $('#fBpm').value = bpm; });
-$('#fOpenWeb').onclick = () => window.open($('#fUrl').value.trim() || 'https://ja.chordwiki.org/', '_blank', 'noopener');
+$('#fOpenWeb').onclick = () => openExternal($('#fUrl').value.trim() || 'https://ja.chordwiki.org/');
 $('#fSave').onclick = async () => {
   Object.assign(cur, {
     title: $('#fTitle').value.trim() || '無題', artist: $('#fArtist').value.trim(), key: $('#fKey').value.trim(),
