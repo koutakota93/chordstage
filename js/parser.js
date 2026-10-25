@@ -2,7 +2,7 @@
 // song = { title, artist, key, capo, bpm, note, sections: [{ name, chorus, lines: [{ segs: [{chord, text}] } | { blank: true }] }] }
 
 const ROOT = '[A-G][#b♯♭]?';
-const CHORD_RE = new RegExp(`^${ROOT}(?:m|maj|M|min|dim|aug|sus|add|omit|\\d+|\\+|-|\\(|\\)|,|°|ø|△)*(?:/${ROOT})?$`);
+const CHORD_RE = new RegExp(`^${ROOT}(?:m|maj|M|min|dim|aug|sus|add|omit|\\d+|\\+|-|#|b|♯|♭|\\(|\\)|,|°|ø|△)*(?:/${ROOT})?$`);
 const SECTION_RE = /^[\[【(（]?\s*(イントロ|intro|[A-Zａ-ｚＡ-Ｚ]?メロ|サビ|間奏|アウトロ|outro|verse|chorus|bridge|interlude|solo|ブリッジ|落ちサビ|エンディング|ending|pre-?chorus|hook|リフ|ソロ|歌)[^\]】)）]{0,12}[\]】)）]?[:：]?$/i;
 
 // 小節線: | || |: :| |] など

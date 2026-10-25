@@ -1561,7 +1561,7 @@ function renderRep() {
     const mark = el('span', 'repmark', song ? '♪' : '');
     const box = el('div', 'grow');
     box.append(el('b', '', e.title));
-    const sub = [repSel === '__all' && e.artist, ENERGY[e.energy || 0], DIFF[e.diff || 0], (e.tags || []).map((t) => '#' + t).join(' '), e.plays ? e.plays + '回' + (agoText(e) ? '・' + agoText(e) : '') : '', e.note].filter(Boolean).join(' ・ ');
+    const sub = [repSel === '__all' && e.artist, e.note].filter(Boolean).join(' ・ ');
     if (sub) box.append(el('small', '', sub));
     li.append(mark, box);
     if (song) {
@@ -1599,8 +1599,6 @@ function openRepEdit(e) {
   repEditId = e ? e.id : null;
   $('#reHead').textContent = e ? 'レパートリーの変更' : 'レパートリーに追加';
   $('#reTitle').value = e ? e.title : ''; $('#reArtist').value = e ? e.artist || '' : ''; $('#reNote').value = e ? e.note || '' : '';
-  $('#reEnergy').value = String(e ? e.energy || 0 : 0); $('#reDiff').value = String(e ? e.diff || 0 : 0); $('#reTags').value = e ? (e.tags || []).join(',') : '';
-  $('#rePlays').textContent = e && e.plays ? `演奏の記録: ${e.plays}回(最後: ${agoText(e)})` : '';
   const s = e && songOfRep(e);
   $('#reLink').textContent = e ? (s ? 'コード譜と連動中: ' + s.title : 'コード譜はまだありません') : '';
   $('#reDelete').classList.toggle('hidden', !e);
@@ -1612,7 +1610,7 @@ $('#reSave').onclick = async () => {
   if (!title) return toast('曲名を入力してください');
   const old = repEditId && repList.find((x) => x.id === repEditId);
   const e = old || { id: uid(), createdAt: Date.now() };
-  Object.assign(e, { title, artist: $('#reArtist').value.trim(), note: $('#reNote').value.trim(), energy: Number($('#reEnergy').value), diff: Number($('#reDiff').value), tags: parseTags($('#reTags').value), updatedAt: Date.now() });
+  Object.assign(e, { title, artist: $('#reArtist').value.trim(), note: $('#reNote').value.trim(), updatedAt: Date.now() });
   if (!old) {
     const dup = repList.find((x) => sameSong(x, e));
     if (dup) return toast('「' + dup.title + '」はすでにあります');
@@ -1640,215 +1638,51 @@ $('#repFromLib').onclick = async () => {
   await loadLibrary();
   toast(add.length + '曲を追加しました');
 };
-// ---- 選曲に使う情報: 盛り上がり(1〜5)・安定度・ジャンル/雰囲気のタグ・演奏の記録 ----
-const ENERGY = ['', 'しっとり', 'おだやか', 'ふつう', '盛り上がる', 'アゲアゲ'];
-const DIFF = ['', '十八番', 'ふつう', '挑戦中'];
-const TEMPO = ['', 'ゆっくり', 'ふつう', '速い'];
-const TAG_PRESETS = ['ポップ', 'ロック', 'バラード', 'ファンク・ソウル', 'ジャズ', 'アニソン', '洋楽', '懐メロ', '盛り上げ定番', '歌い上げ', '泣ける', '明るい'];
-const tagPool = () => [...new Set([...TAG_PRESETS, ...repList.flatMap((e) => e.tags || [])])];
-const tempoBucket = (bpm) => (!bpm ? 0 : bpm <= 85 ? 1 : bpm <= 125 ? 2 : 3); // 曲のBPMから(コード譜がある曲だけ)
-const agoText = (e) => {
-  if (!e.lastPlayedAt) return '';
-  const d = Math.floor((Date.now() - e.lastPlayedAt) / 86400000);
-  return d <= 0 ? '今日' : d < 31 ? d + '日前' : d < 365 ? Math.floor(d / 30) + 'か月前' : Math.floor(d / 365) + '年前';
-};
-// 譜面(コード譜がある曲)から、曲の特徴を自動で推定する: テンポ・マイナーコードの割合・リズム表記の細かさ
-const featCache = new Map();
-function songFeatures(song) {
-  if (!song) return null;
-  const key = song.id + ':' + (song.updatedAt || 0);
-  if (featCache.has(key)) return featCache.get(key);
-  let f = null;
-  try {
-    const p = parseSong(song.raw, { title: song.title, artist: song.artist });
-    const chords = p.sections.flatMap((sc) => sc.lines.flatMap((l) => (l.segs || []).filter((g) => g.chord).map((g) => g.chord)));
-    if (chords.length >= 4) {
-      const minor = chords.filter((c) => /^[A-G][#b]?(m(?!aj)|min|dim)/.test(c)).length / chords.length;
-      const fine = (song.raw.match(/[=≧]/g) || []).length;
-      const bpm = song.bpm || p.bpm || 0;
-      let en = !bpm ? 0 : bpm <= 80 ? 1 : bpm <= 95 ? 2 : bpm <= 115 ? 3 : bpm <= 135 ? 4 : 5;
-      if (en) { if (fine > 8) en = Math.min(5, en + 0.5); if (minor > 0.55) en = Math.max(1, en - 0.5); en = Math.round(en); }
-      f = { bpm, minor, fine, energy: en, mood: minor > 0.55 ? 'マイナー調(切ない・しっとり寄り)' : minor < 0.2 ? 'メジャー調(明るい寄り)' : '' };
-    }
-  } catch {}
-  featCache.set(key, f);
-  return f;
-}
-const effEnergy = (e, song) => e.energy || ((songFeatures(song) || {}).energy || 0);
-function logPlaySong(songId) {
-  const now = Date.now();
-  repList.filter((e) => { const sg = songOfRep(e); return sg && sg.id === songId; }).forEach((e) => { e.plays = (e.plays || 0) + 1; e.lastPlayedAt = now; e.updatedAt = now; db.putRep(e); });
-}
-// チップ(押すと選択/解除)を並べる。single: 1つだけ選べる
-function chipGroup(box, items, selected, { single = false, onChange = () => {} } = {}) {
-  box.textContent = '';
-  items.forEach(([val, label]) => {
-    const b = el('button', selected.has(val) ? 'on' : '', label);
-    b.type = 'button';
-    b.onclick = () => {
-      if (single) { selected.clear(); selected.add(val); }
-      else if (selected.has(val)) selected.delete(val); else selected.add(val);
-      [...box.children].forEach((c, i) => c.classList.toggle('on', selected.has(items[i][0])));
-      onChange();
-    };
-    box.append(b);
-  });
-}
-
-// ---- 仕分けモード: 選曲に使う情報を、1曲ずつざっくり入れていく ----
-let sortQueue = [], sortIdx = 0, sortEnergy = new Set(), sortDiff = new Set(), sortTags = new Set();
-const sortEntry = () => repList.find((x) => x.id === sortQueue[sortIdx]);
-function showSortCard() {
-  const e = sortEntry();
-  $('#sdCard').classList.toggle('hidden', !e);
-  $('#sdNext').disabled = $('#sdSkip').disabled = !e;
-  $('#sdCount').textContent = e ? `(あと ${sortQueue.length - sortIdx}曲)` : '';
-  $('#sdDone').textContent = e ? '' : 'すべて仕分け済みです 🎉(「🎲 今日の選曲」を試してみましょう)';
-  if (!e) return;
-  $('#sdTitle').textContent = e.title;
-  $('#sdArtist').textContent = [e.artist, e.note].filter(Boolean).join(' ・ ');
-  const ft = songFeatures(songOfRep(e));
-  $('#sdEst').classList.toggle('hidden', !ft);
-  $('#sdEst').textContent = ft ? `譜面からの推定: ${ft.energy ? '盛り上がり ' + ft.energy + '(' + ENERGY[ft.energy] + ')' : ''}${ft.bpm ? ' ・ BPM ' + ft.bpm : ''}${ft.mood ? ' ・ ' + ft.mood : ''}` : '';
-  sortEnergy = new Set(e.energy ? [e.energy] : ft && ft.energy ? [ft.energy] : []); // 未設定なら、推定を最初から選んでおく sortDiff = new Set(e.diff ? [e.diff] : []); sortTags = new Set(e.tags || []);
-  chipGroup($('#sdEnergy'), [1, 2, 3, 4, 5].map((n) => [n, n + ' ' + ENERGY[n]]), sortEnergy, { single: true });
-  chipGroup($('#sdDiff'), [1, 2, 3].map((n) => [n, DIFF[n]]), sortDiff, { single: true });
-  chipGroup($('#sdTags'), tagPool().map((t) => [t, t]), sortTags);
-}
-$('#repSort').onclick = () => {
-  sortQueue = repList.filter((e) => !e.energy || !e.diff).map((e) => e.id);
-  sortIdx = 0;
-  showSortCard();
-  $('#sortDlg').showModal();
-};
-$('#sdNext').onclick = async () => {
-  const e = sortEntry();
-  if (!e) return;
-  e.energy = [...sortEnergy][0] || e.energy || 0; e.diff = [...sortDiff][0] || e.diff || 0; e.tags = [...sortTags]; e.updatedAt = Date.now();
-  await db.putRep(e);
-  sortIdx++;
-  showSortCard();
-};
-$('#sdSkip').onclick = () => { sortIdx++; showSortCard(); };
-$('#sortDlg').addEventListener('close', () => loadLibrary());
-
-// ---- 今日の選曲: 気分を指定して、レパートリーからおすすめを選ぶ ----
-const REC_DEFAULT = { energy: [], tempo: [], diff: 'any', tags: [], n: 5, flow: 'rise', fresh: true, chart: true };
-let recPrefs = { ...REC_DEFAULT };
-try { Object.assign(recPrefs, JSON.parse(localStorage.getItem('cs.recPrefs') || '{}')); } catch {}
+// ---- 今日の選曲: レパートリーから、ランダムに数曲選ぶ ----
 let recPicks = [];
-const REC_PRESETS = [
-  ['🔥 アゲアゲ', { energy: ['high'], tempo: [], diff: 'any', flow: 'rise' }],
-  ['🌙 しっとり', { energy: ['low'], tempo: [], diff: 'any', flow: 'mix' }],
-  ['😌 まったり', { energy: ['low', 'mid'], tempo: [], diff: 'any', flow: 'mix' }],
-  ['🎯 安定重視', { energy: [], tempo: [], diff: 'safe', flow: 'rise' }],
-  ['🚀 挑戦', { energy: [], tempo: [], diff: 'try', flow: 'mix' }],
-  ['✨ おまかせ', { energy: [], tempo: [], diff: 'any', tags: [], flow: 'rise' }],
-];
-const eBucket = (n) => (!n ? '' : n <= 2 ? 'low' : n === 3 ? 'mid' : 'high');
-function scoreRep(e, song, p) {
-  let sc = 1;
-  const why = []; // { t: 説明, k: 'ok'(合っている) | 'unk'(情報がなくて判断できない) }
-  const ee = effEnergy(e, song), eb = eBucket(ee), est = !e.energy && ee;
-  if (p.energy.length) {
-    if (!eb) { sc += 0.3; why.push({ t: '盛り上がり: 不明', k: 'unk' }); }
-    else if (p.energy.includes(eb)) { sc += est ? 2 : 3; why.push({ t: '盛り上がり: ' + ENERGY[ee] + (est ? '(譜面から推定)' : ''), k: 'ok' }); } else sc -= 2;
-  }
-  const tb = tempoBucket(song && song.bpm);
-  if (p.tempo.length) {
-    if (!tb) why.push({ t: 'テンポ: 不明(コード譜なし)', k: 'unk' });
-    else if (p.tempo.includes(tb)) { sc += 2; why.push({ t: 'テンポ: ' + TEMPO[tb] + '(BPM ' + song.bpm + ')', k: 'ok' }); } else sc -= 1.5;
-  }
-  if (p.diff !== 'any') {
-    if (!e.diff) why.push({ t: '安定度: 未設定', k: 'unk' });
-    else if (p.diff === 'safe') { if (e.diff === 1) { sc += 2.5; why.push({ t: '安定度: 十八番', k: 'ok' }); } else if (e.diff === 3) sc -= 2; }
-    else if (e.diff === 3) { sc += 2.5; why.push({ t: '安定度: 挑戦中', k: 'ok' }); } else if (e.diff === 1) sc -= 1;
-  }
-  if (p.tags.length) {
-    const hit = (e.tags || []).filter((t) => p.tags.includes(t));
-    if (hit.length) { sc += 3 * Math.min(2, hit.length); why.push({ t: 'タグ: ' + hit.join('・'), k: 'ok' }); }
-    else if (!(e.tags || []).length) why.push({ t: 'タグ: 未設定', k: 'unk' });
-    else sc -= 2;
-  }
-  if (p.fresh) {
-    if (!e.lastPlayedAt) { sc += 2; why.push({ t: '演奏の記録なし(まだ・または未記録)', k: 'unk' }); }
-    else {
-      const d = (Date.now() - e.lastPlayedAt) / 86400000;
-      if (d < 7) sc -= 3; else { sc += Math.min(3, d / 30); why.push({ t: '最後に演奏したのは ' + agoText(e), k: 'ok' }); }
-    }
-  }
-  return { sc: sc + Math.random() * 1.5, why };
-}
-function recCandidates() {
-  return repList.map((e) => ({ e, song: songOfRep(e) })).filter((x) => !recPrefs.chart || x.song);
-}
+const REC_PREFS = (() => { try { return { n: 5, chart: true, ...JSON.parse(localStorage.getItem('cs.recPrefs') || '{}') }; } catch { return { n: 5, chart: true }; } })();
+const saveRecPrefs = () => { try { localStorage.setItem('cs.recPrefs', JSON.stringify(REC_PREFS)); } catch {} };
+const recCandidates = () => repList.map((e) => ({ e, song: songOfRep(e) })).filter((x) => !REC_PREFS.chart || x.song);
 function recPick(n, exclude = new Set(), keep = []) {
-  const scored = recCandidates().filter((x) => !exclude.has(x.e.id)).map((x) => ({ ...x, ...scoreRep(x.e, x.song, recPrefs) })).sort((a, b) => b.sc - a.sc);
+  const pool = recCandidates().filter((x) => !exclude.has(x.e.id));
+  for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
   const out = [...keep];
-  const seenArtist = (a) => out.length && (out[out.length - 1].e.artist || '') === a;
-  while (out.length < n && scored.length) {
-    let i = scored.findIndex((x) => !seenArtist(x.e.artist || '') || !x.e.artist); // 同じアーティストが続かないように
+  while (out.length < n && pool.length) {
+    const last = out.length ? out[out.length - 1].e.artist || '' : '';
+    let i = pool.findIndex((x) => !x.e.artist || x.e.artist !== last); // 同じアーティストが続かないように
     if (i < 0) i = 0;
-    out.push(scored.splice(i, 1)[0]);
+    out.push(pool.splice(i, 1)[0]);
   }
   return out;
 }
 function renderRec() {
   const ol = $('#recList');
   ol.textContent = '';
-  const picks = recPrefs.flow === 'rise' ? [...recPicks].sort((a, b) => (a.e.energy || 3) - (b.e.energy || 3)) : recPicks;
-  picks.forEach((x) => {
+  recPicks.forEach((x) => {
     const li = el('li');
     const box = el('div', 'grow');
     box.append(el('b', '', x.e.title), el('small', '', [x.e.artist, !x.song && 'コード譜なし'].filter(Boolean).join(' ・ ')));
-    if (x.why && x.why.length) { const r = el('div', 'chiprow'); x.why.forEach((w) => r.append(el('span', 'chip ' + w.k, (w.k === 'ok' ? '✓ ' : '? ') + w.t))); box.append(r); } else box.append(el('div', 'hint', '指定に合う理由は見つかりませんでしたが、ほかに候補が少ないため選びました'));
     const acts = el('div', 'recacts');
-    const mk = (t, fn, cls = '') => { const b = el('button', cls, t); b.type = 'button'; b.onclick = fn; acts.append(b); };
+    const mk = (t, fn) => { const b = el('button', '', t); b.type = 'button'; b.onclick = fn; acts.append(b); };
     if (x.song) mk('開く', () => { $('#recDlg').close(); openSong(x.song.id); });
-    mk('✓ 演奏した', () => { x.e.plays = (x.e.plays || 0) + 1; x.e.lastPlayedAt = Date.now(); x.e.updatedAt = Date.now(); db.putRep(x.e); toast('「' + x.e.title + '」を演奏した曲として記録しました'); });
-    mk('差し替え', () => { const keep = recPicks.filter((y) => y !== x); recPicks = recPick(keep.length + 1, new Set(recPicks.map((y) => y.e.id)), keep); renderRec(); });
+    mk('差し替え', () => { const keep = recPicks.filter((y) => y !== x); const at = recPicks.indexOf(x); const [pick] = recPick(1, new Set(recPicks.map((y) => y.e.id))); if (pick) keep.splice(at, 0, pick); recPicks = keep; renderRec(); });
     li.append(box, acts);
     ol.append(li);
   });
-  $('#recActions').classList.toggle('hidden', !picks.some((x) => x.song));
+  $('#recActions').classList.toggle('hidden', !recPicks.some((x) => x.song));
   $('#recGo').textContent = recPicks.length ? '↻ もう一度選ぶ' : '選曲する';
+  $('#recInfo').textContent = `対象 ${recCandidates().length}曲`;
 }
-function updateRecInfo() {
-  const c = recCandidates();
-  const unsorted = c.filter((x) => !effEnergy(x.e, x.song)).length;
-  const est = c.filter((x) => !x.e.energy && effEnergy(x.e, x.song)).length;
-  $('#recInfo').textContent = `対象 ${c.length}曲 ・ 盛り上がりが分かる曲 ${c.length - unsorted}曲` + (est ? `(うち譜面からの推定 ${est}曲)` : '') + (unsorted ? ` ・ 不明 ${unsorted}曲` : '') + '。✓=指定に合う理由、?=情報がなくて判断できなかった項目。「仕分け」で情報を入れると、理由と精度が良くなります。';
-}
-function saveRecPrefs() { try { localStorage.setItem('cs.recPrefs', JSON.stringify(recPrefs)); } catch {} updateRecInfo(); }
-function buildRecUi() {
-  const set = (k) => new Set(Array.isArray(recPrefs[k]) ? recPrefs[k] : [recPrefs[k]]);
-  const chg = (k, sel, single) => () => { recPrefs[k] = single ? [...sel][0] : [...sel]; saveRecPrefs(); };
-  const sE = set('energy'), sT = set('tempo'), sD = set('diff'), sG = set('tags');
-  chipGroup($('#recEnergy'), [['low', 'しっとり'], ['mid', 'ふつう'], ['high', 'アゲ']], sE, { onChange: chg('energy', sE) });
-  chipGroup($('#recTempo'), [[1, 'ゆっくり'], [2, 'ふつう'], [3, '速い']], sT, { onChange: chg('tempo', sT) });
-  chipGroup($('#recDiff'), [['any', 'おまかせ'], ['safe', '安定した曲'], ['try', '挑戦したい曲']], sD, { single: true, onChange: chg('diff', sD, true) });
-  chipGroup($('#recTags'), tagPool().map((t) => [t, t]), sG, { onChange: chg('tags', sG) });
-  $('#recN').value = String(recPrefs.n); $('#recFlow').value = recPrefs.flow; $('#recFresh').checked = !!recPrefs.fresh; $('#recChart').checked = !!recPrefs.chart;
-  const pre = $('#recPresets');
-  pre.textContent = '';
-  REC_PRESETS.forEach(([label, v]) => {
-    const b = el('button', '', label);
-    b.type = 'button';
-    b.onclick = () => { recPrefs = { ...recPrefs, ...REC_DEFAULT, n: recPrefs.n, fresh: recPrefs.fresh, chart: recPrefs.chart, ...v }; saveRecPrefs(); buildRecUi(); };
-    pre.append(b);
-  });
-  updateRecInfo();
-}
-$('#repRec').onclick = () => { recPicks = []; buildRecUi(); renderRec(); $('#recDlg').showModal(); };
-['recN', 'recFlow'].forEach((id) => $('#' + id).addEventListener('change', () => { recPrefs.n = Number($('#recN').value); recPrefs.flow = $('#recFlow').value; saveRecPrefs(); renderRec(); }));
-['recFresh', 'recChart'].forEach((id) => $('#' + id).addEventListener('change', () => { recPrefs.fresh = $('#recFresh').checked; recPrefs.chart = $('#recChart').checked; saveRecPrefs(); }));
+$('#repRec').onclick = () => { recPicks = []; $('#recN').value = String(REC_PREFS.n); $('#recChart').checked = !!REC_PREFS.chart; renderRec(); $('#recDlg').showModal(); };
+$('#recN').addEventListener('change', () => { REC_PREFS.n = Number($('#recN').value); saveRecPrefs(); });
+$('#recChart').addEventListener('change', () => { REC_PREFS.chart = $('#recChart').checked; saveRecPrefs(); recPicks = []; renderRec(); });
 $('#recGo').onclick = () => {
-  recPicks = recPick(recPrefs.n);
-  if (!recPicks.length) toast('条件に合う曲がありません。「コード譜がある曲だけ」を外すか、指定をゆるめてください');
+  recPicks = recPick(REC_PREFS.n);
+  if (!recPicks.length) toast('選べる曲がありません。「コード譜がある曲だけ」を外してみてください');
   renderRec();
 };
 $('#recMakeSet').onclick = async () => {
-  const ids = [...(recPrefs.flow === 'rise' ? [...recPicks].sort((a, b) => (a.e.energy || 3) - (b.e.energy || 3)) : recPicks)].filter((x) => x.song).map((x) => x.song.id);
+  const ids = recPicks.filter((x) => x.song).map((x) => x.song.id);
   const d = new Date();
   const set = await createSet('今日の選曲 ' + (d.getMonth() + 1) + '/' + d.getDate(), ids, '', []);
   $('#recDlg').close();
@@ -2498,7 +2332,6 @@ function tick() {
 function startAuto(startUnit = 0) {
   if (autoOn || !blocks.length) return;
   autoOn = true;
-  if (!played && cur) logPlaySong(cur.id); // 演奏の記録(選曲の「最近やっていない曲」に使う)
   played = true;
   unitIdx = startUnit;
   unitsLeft = lineUnits(pos) - startUnit;
