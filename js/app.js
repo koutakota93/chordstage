@@ -107,15 +107,9 @@ function toast(msg) {
 }
 
 // ---------- 外部サイトを開く ----------
-// Androidでは、インストールしたアプリの中で window.open すると、アプリ内の簡易ブラウザで開き、アドレスバーがなく、ブックマークレットが使えない。
-// そこで、Chromeアプリ本体で開く(intent)。Chromeが無ければ、通常どおり開く
-const isAndroid = /Android/i.test(navigator.userAgent);
+// インストールしたアプリ(Android)から開いたサイトは、アプリ内の簡易ブラウザ(アドレスバーなし)で開く。
+// フルのChromeで開くことは、アプリからは指定できないため、簡易ブラウザの右上「︙」→「Chromeで開く」を使う
 function openExternal(url, name) {
-  if (isAndroid && /^https?:\/\//.test(url)) {
-    const u = new URL(url);
-    location.href = `intent://${u.host}${u.pathname}${u.search}${u.hash}#Intent;scheme=${u.protocol.slice(0, -1)};package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(url)};end`;
-    return;
-  }
   window.open(url, name || '_blank', name ? '' : 'noopener');
 }
 
