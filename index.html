@@ -218,7 +218,9 @@
     <p class="hint">漢字の名前は、ここで入れた読み仮名の順に並びます(ひらがな・カタカナどちらでも)。入れていないものは、一覧の最後の「漢字(読み未設定)」にまとまります。</p>
     <div class="row"><button type="button" id="yomiAuto" class="primary">読み仮名を自動で調べる</button><button type="button" id="yomiPaste">貼り付けで入れる</button><button type="button" id="yomiCopy">未設定の名前をコピー</button></div>
     <p class="hint" id="yomiProg"></p>
-    <ul id="yomiList" class="yomilist"></ul>
+    <div class="yomisec"><b id="yomiUnsetN"></b></div>
+    <ul id="yomiList" class="yomilist unsetlist"></ul>
+    <details id="yomiDoneBox"><summary>設定済み(<span id="yomiDoneN"></span>件)。直すときは、ここ</summary><ul id="yomiDone" class="yomilist"></ul></details>
     <p class="hint" id="yomiEmpty"></p>
     <div class="row end"><button value="cancel">キャンセル</button><button type="button" id="yomiSave" class="primary">保存</button></div>
   </form>

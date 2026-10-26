@@ -86,12 +86,12 @@ async function ensureFolder() {
   return made.id;
 }
 
-export async function backup(songs, setlists = [], deleted = {}, repertoire = []) {
+export async function backup(songs, setlists = [], deleted = {}, repertoire = [], yomi = {}) {
   const folder = await ensureFolder();
   const d = new Date();
   const p = (n) => String(n).padStart(2, '0');
   const name = `chordstage-backup-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}.json`;
-  const content = JSON.stringify({ app: 'chordstage', version: 2, exportedAt: d.toISOString(), songs, setlists, deleted, repertoire });
+  const content = JSON.stringify({ app: 'chordstage', version: 2, exportedAt: d.toISOString(), songs, setlists, deleted, repertoire, yomi });
   const b = 'cs' + Date.now();
   const body = `--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify({ name, parents: [folder] })}\r\n--${b}\r\nContent-Type: application/json\r\n\r\n${content}\r\n--${b}--`;
   await call('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name', {

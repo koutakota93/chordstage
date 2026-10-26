@@ -77,6 +77,7 @@ function adoptSettings(inc) {
   settings.view = { ...VIEW_DEFAULT, ...(settings.view || {}), fields: { ...VIEW_DEFAULT.fields, ...((settings.view || {}).fields || {}) }, tab: keep.tab };
   settings.fontSize = keep.fontSize;
   lastSettingsStr = JSON.stringify(syncSettings());
+  if (typeof migrateYomi === 'function') migrateYomi(); // 古い版の端末から届いた設定に、読み仮名が入っていたら、読み仮名の保存先へ移す
   applySettings();
   updateAutoFitBtn();
   if (!$('#player').classList.contains('hidden')) refit();
@@ -223,7 +224,18 @@ const ARTIST_NONE = '(アーティスト不明)';
 const hasKanji = (t) => /[㐀-䶿一-鿿々〆]/.test(t);
 const toHira = (t) => String(t || '').normalize('NFKC').replace(/[ァ-ヶ]/g, (m) => String.fromCharCode(m.charCodeAt(0) - 0x60)).toLowerCase().trim();
 // 読み仮名: 設定した読み > 漢字を含まない名前はそのまま > なし(漢字で、読みが未設定)
-const yomiOf = (name) => { const y = (settings.artistYomi || {})[name]; return y ? toHira(y) : hasKanji(name) ? '' : toHira(name); };
+// 読み仮名は、設定とは別に、名前ごとに「読み+更新時刻」で保存する(端末をまたいで同期するとき、新しい方を名前ごとに採用するので、消えない)
+let yomiMap = (() => { try { return JSON.parse(localStorage.getItem('cs.yomi') || '{}'); } catch { return {}; } })();
+const saveYomiMap = () => { try { localStorage.setItem('cs.yomi', JSON.stringify(yomiMap)); } catch {} };
+function migrateYomi() { // 以前は、設定の中に入れていた。新しい保存先へ移す(新しい読みは、上書きしない)
+  if (!settings.artistYomi) return;
+  for (const [n, y] of Object.entries(settings.artistYomi)) if (!yomiMap[n]) yomiMap[n] = { y, t: 1 };
+  delete settings.artistYomi;
+  saveYomiMap();
+}
+migrateYomi();
+const yomiOf = (name) => { const e = yomiMap[name]; const y = e && e.y; return y ? toHira(y) : hasKanji(name) ? '' : toHira(name); };
+const needsYomi = (name) => !!name && name !== ARTIST_NONE && hasKanji(name) && !/^[A-Za-zＡ-Ｚａ-ｚ]/.test(name) && !(yomiMap[name] && yomiMap[name].y);
 const GYOU = ['あいうえおぁぃぅぇぉゔ', 'かきくけこ', 'さしすせそ', 'たちつてとっ', 'なにぬねの', 'はひふへほ', 'まみむめも', 'やゆよゃゅょ', 'らりるれろ', 'わをんゐゑゎ'];
 function artistKey(name) { // [区分, 見出し, 並びの文字]
   if (name === ARTIST_NONE) return [4, '#', ''];
@@ -244,7 +256,13 @@ function orderArtists(map) { // map: アーティスト名 → 曲の配列。�
   arr.sort((a, b) => (byCount ? (a.name === ARTIST_NONE) - (b.name === ARTIST_NONE) || b.n - a.n : 0) || a.k[0] - b.k[0] || ja(a.k[2], b.k[2]) || ja(a.name, b.name));
   return arr.map((x) => ({ name: x.name, head: byCount ? '' : x.k[1] }));
 }
-function fillArtists(nav, map, row) { let last = null; orderArtists(map).forEach(({ name, head }) => { if (head && head !== last) { nav.append(el('div', 'ainit', head)); last = head; } nav.append(row(name, name, map.get(name).length)); }); }
+function updateYomiBtns() {
+  const n = yomiNames().filter(needsYomi).length;
+  $('#btnYomi').textContent = n ? `アーティストの読み仮名を設定(未設定 ${n}件)` : 'アーティストの読み仮名を設定(すべて設定済み)';
+  $('#btnYomi2').textContent = n ? `読み仮名(未設定 ${n})` : '読み仮名';
+  $('#btnYomi').classList.toggle('warnbtn', n > 0); $('#btnYomi2').classList.toggle('warnbtn', n > 0);
+}
+function fillArtists(nav, map, row) { updateYomiBtns(); let last = null; orderArtists(map).forEach(({ name, head }) => { if (head && head !== last) { nav.append(el('div', 'ainit', head)); last = head; } nav.append(row(name, name, map.get(name).length)); }); }
 const artistOf = (s) => (s.artist || '').trim() || ARTIST_NONE;
 const hueOf = (t) => { let h = 0; for (const c of t) h = (h * 31 + c.codePointAt(0)) % 360; return h; };
 function avatar(name, cls = '') {
@@ -263,6 +281,7 @@ function renderBrowse(list, ul) {
     b.type = 'button';
     const t = el('span', 'at');
     t.append(el('b', '', label), el('small', '', n + '曲'));
+    if (key !== '__all' && needsYomi(key)) t.append(el('em', 'unset', '読み未設定'));
     b.append(avatar(key), t, el('i', 'chev', '›'));
     b.onclick = () => { browseSel = key; browseOpen = true; pushArtist(); renderBrowse(list, ul); $('#browseSongs').scrollTop = 0; };
     return b;
@@ -1226,6 +1245,14 @@ async function mergeIncoming(data) {
     if (!mine) { await db.putSetlist(x); rep.addedSets.push(x); }
     else if ((mine.updatedAt || 0) < (x.updatedAt || 0)) { await db.putSetlist(x); rep.updatedSets.push(x); }
   }
+  // 読み仮名: 名前ごとに、更新が新しい方を採用する(端末ごとに設定した分が、混ざって残る)
+  let yc = 0;
+  for (const [n, v] of Object.entries(data.yomi || {})) {
+    if (!v || typeof v.y !== 'string') continue;
+    const mine = yomiMap[n];
+    if (!mine || (mine.t || 0) < (v.t || 0)) { yomiMap[n] = { y: v.y, t: v.t || 0 }; yc++; }
+  }
+  if (yc) { saveYomiMap(); rep.yomi = yc; renderLibrary(); renderRep(); }
   // レパートリー: 曲ごとに更新が新しい方を採用する。他の端末で削除したものは、確認なしでそのまま削除する
   const localRep = await db.allRep();
   for (const x of data.repertoire || []) {
@@ -1261,6 +1288,7 @@ const payload = () => {
     songs: [...songs, ...trash].filter((x) => !pend.has(x.id)),
     setlists: setlists.filter((x) => !pend.has(x.id)),
     repertoire: repList,
+    yomi: yomiMap,
     deleted: mergeTomb(getTomb(), syncCtx ? syncCtx.tombNew : {}),
     settings: syncSettings(), settingsAt: getSettingsAt(),
   };
@@ -1350,7 +1378,7 @@ async function autoSync(reason) {
     const pend = rep.pendingSongs.length + rep.pendingSets.length;
     const n = rep.addedSongs.length + rep.updatedSongs.length + rep.addedSets.length + rep.updatedSets.length + rep.addedRep.length + rep.updatedRep.length;
     if (pend) toast(`ほかの端末で削除された曲が ${pend}件あります。上の「☁」から確認できます`);
-    else if (n || rep.settings) toast(`同期しました(曲の追加・更新 ${n}件${rep.settings ? '、設定も反映' : ''})`);
+    else if (n || rep.settings || rep.yomi) toast(`同期しました(曲の追加・更新 ${n}件${rep.settings ? '、設定も反映' : ''}${rep.yomi ? '、読み仮名 ' + rep.yomi + '件' : ''})`);
   } catch (e) {
     if (e.code === 'popup' && reason !== 'tap') { needTap = true; document.addEventListener('pointerdown', () => autoSync('tap'), { capture: true, once: true }); }
     else lastErr = e.message;
@@ -1412,7 +1440,7 @@ function showSyncResult(rep, opt = {}) {
   chips(lists, '追加されたセットリスト', rep.addedSets.map((x) => x.name), 'add');
   chips(lists, '更新されたセットリスト', rep.updatedSets.map((x) => x.name), 'upd');
   if (!rep.addedSongs.length && !rep.updatedSongs.length && !rep.addedSets.length && !rep.updatedSets.length && !rep.addedRep.length && !rep.updatedRep.length && !pend) {
-    lists.append(el('p', 'sdnone', rep.settings ? '曲の変更はありません。設定をドライブの内容に合わせました。' : '変更はありませんでした。端末とドライブは同じ内容です。'));
+    lists.append(el('p', 'sdnone', rep.settings || rep.yomi ? '曲の変更はありません。設定・読み仮名をドライブの内容に合わせました。' : '変更はありませんでした。端末とドライブは同じ内容です。'));
   }
   // 他の端末で削除された曲: 残したいものにチェック → 1クリックで、チェックしていないものを一括削除
   const box = $('#sdPending');
@@ -1489,7 +1517,7 @@ $('#gdBackup').onclick = async () => {
   $('#gdBackup').disabled = true;
   try {
     toast('Googleドライブへ保存中…');
-    const r = await drive.backup(songs, setlists, getTomb(), repList);
+    const r = await drive.backup(songs, setlists, getTomb(), repList, yomiMap);
     toast(`保存しました: ${r.folder} / ${r.name}(${r.count}曲)`);
   } catch (e) { toast(e.message); }
   $('#gdBackup').disabled = !drive.isConfigured();
@@ -1592,6 +1620,7 @@ function renderRep() {
     b.type = 'button';
     const t = el('span', 'at');
     t.append(el('b', '', label), el('small', '', n + '曲'));
+    if (key !== '__all' && needsYomi(key)) t.append(el('em', 'unset', '読み未設定'));
     b.append(avatar(key), t, el('i', 'chev', '›'));
     b.onclick = () => { repSel = key; repOpen = true; pushArtist(); renderRep(); $('#repSongs').scrollTop = 0; };
     return b;
@@ -1749,21 +1778,32 @@ $('#recMakeSet').onclick = async () => {
 };
 
 // ---- 漢字のアーティスト名の、読み仮名を設定する ----
+function yomiNames() {
+  return [...new Set([...songs.map((x) => (x.artist || '').trim()), ...repList.map((x) => (x.artist || '').trim())])].filter((n) => n && hasKanji(n) && !/^[A-Za-zＡ-Ｚａ-ｚ]/.test(n)); // アルファベットで始まる名前は、読み仮名が要らない
+}
+const yomiRow = (n, unset) => {
+  const li = el('li', unset ? 'unset' : '');
+  const inp = el('input');
+  inp.value = (yomiMap[n] && yomiMap[n].y) || ''; inp.placeholder = 'ひらがなで(例: よねづけんし)'; inp.dataset.name = n;
+  li.append(el('b', '', n), inp);
+  return li;
+};
+const yomiMissed = new Set(); // 自動で調べて、見つからなかった名前(この画面を開いている間は、もう一度調べない)
 function openYomi() {
-  const names = [...new Set([...songs.map((x) => (x.artist || '').trim()), ...repList.map((x) => (x.artist || '').trim())])].filter((n) => n && hasKanji(n) && !/^[A-Za-zＡ-Ｚａ-ｚ]/.test(n)); // アルファベットで始まる名前は、読み仮名が要らない
-  const map = settings.artistYomi || {};
-  names.sort((a, b) => (!!map[a] - !!map[b]) || ja(a, b));
-  const ul = $('#yomiList');
-  ul.textContent = '';
-  names.forEach((n) => {
-    const li = el('li');
-    const inp = el('input');
-    inp.value = map[n] || ''; inp.placeholder = 'ひらがなで(例: よねづけんし)'; inp.dataset.name = n;
-    li.append(el('b', '', n), inp);
-    ul.append(li);
-  });
+  const names = yomiNames().sort((a, b) => ja(a, b));
+  const un = names.filter((n) => !(yomiMap[n] && yomiMap[n].y)), done = names.filter((n) => yomiMap[n] && yomiMap[n].y);
+  const ul = $('#yomiList'), dl = $('#yomiDone');
+  ul.textContent = ''; dl.textContent = '';
+  un.forEach((n) => ul.append(yomiRow(n, true)));
+  done.forEach((n) => dl.append(yomiRow(n, false)));
+  $('#yomiUnsetN').textContent = un.length ? `未設定 ${un.length}件` : '未設定はありません ✓';
+  $('#yomiUnsetN').classList.toggle('ok', !un.length);
+  $('#yomiDoneN').textContent = done.length;
+  $('#yomiDoneBox').classList.toggle('hidden', !done.length);
+  $('#yomiProg').textContent = '';
   $('#yomiEmpty').textContent = names.length ? '' : '漢字を含むアーティスト名がありません。';
   $('#yomiDlg').showModal();
+  if (un.length && navigator.onLine) runYomiAuto(); // 未設定のものだけ、自動で調べる
 }
 $('#btnYomi').onclick = openYomi;
 $('#btnYomi2').onclick = openYomi;
@@ -1786,19 +1826,23 @@ async function lookupYomi(name) {
   }
   return '';
 }
-$('#yomiAuto').onclick = async () => {
+async function runYomiAuto() {
   const inputs = [...$('#yomiList').querySelectorAll('input')].filter((i) => !i.value.trim());
   if (!inputs.length) return toast('読み仮名が未設定のアーティストはいません');
   $('#yomiAuto').disabled = true;
   let ok = 0;
   for (const [n, i] of inputs.entries()) {
-    $('#yomiProg').textContent = `調べています… ${n + 1} / ${inputs.length}(${i.dataset.name})`;
-    try { const y = await lookupYomi(i.dataset.name); if (y) { i.value = y; i.classList.add('auto'); ok++; } } catch { $('#yomiProg').textContent = '調べられませんでした(ネット接続を確認してください)'; break; }
+    $('#yomiProg').textContent = `未設定の読みを調べています… ${n + 1} / ${inputs.length}(${i.dataset.name})`;
+    try {
+      const y = await lookupYomi(i.dataset.name);
+      if (y) { i.value = y; i.classList.add('auto'); ok++; } else { i.classList.add('miss'); i.placeholder = '見つかりませんでした。手で入力してください'; }
+    } catch { $('#yomiProg').textContent = '調べられませんでした(ネット接続を確認してください)'; $('#yomiAuto').disabled = false; return; }
     await new Promise((r) => setTimeout(r, 250));
   }
   $('#yomiAuto').disabled = false;
-  $('#yomiProg').textContent = `${ok} / ${inputs.length}件の読みが見つかりました(青い枠は自動で入れたもの。違っていたら直して、「保存」を押してください)`;
-};
+  $('#yomiProg').textContent = `${ok} / ${inputs.length}件の読みが見つかりました(青い枠は自動で入れたもの。違っていたら直して、「保存」を押してください)` + (ok < inputs.length ? ' 見つからなかったものは、手で入れてください。' : '');
+}
+$('#yomiAuto').onclick = runYomiAuto;
 // 「名前[Tab]よみ」の形で貼り付けて、まとめて入れる
 $('#yomiPaste').onclick = () => {
   const t = prompt('「名前[Tab]よみ」を1行に1組で貼り付けてください');
@@ -1806,7 +1850,7 @@ $('#yomiPaste').onclick = () => {
   const map = {};
   t.split('\n').forEach((l) => { const [n, y] = l.split(/\t|,/); if (n && y) map[n.trim()] = y.trim(); });
   let c = 0;
-  $('#yomiList').querySelectorAll('input').forEach((i) => { if (map[i.dataset.name]) { i.value = map[i.dataset.name]; i.classList.add('auto'); c++; } });
+  [...$('#yomiList').querySelectorAll('input'), ...$('#yomiDone').querySelectorAll('input')].forEach((i) => { if (map[i.dataset.name]) { i.value = map[i.dataset.name]; i.classList.add('auto'); c++; } });
   toast(c + '件に入れました。「保存」を押してください');
 };
 $('#yomiCopy').onclick = async () => {
@@ -1814,13 +1858,15 @@ $('#yomiCopy').onclick = async () => {
   try { await navigator.clipboard.writeText(names); toast('読みが未設定の名前をコピーしました'); } catch { toast('コピーできませんでした'); }
 };
 $('#yomiSave').onclick = () => {
-  const map = { ...(settings.artistYomi || {}) };
-  $('#yomiList').querySelectorAll('input').forEach((i) => { const v = toHira(i.value); if (v) map[i.dataset.name] = v; else delete map[i.dataset.name]; });
-  settings.artistYomi = map;
-  applySettings();
+  let changed = 0;
+  [...$('#yomiList').querySelectorAll('input'), ...$('#yomiDone').querySelectorAll('input')].forEach((i) => {
+    const n = i.dataset.name, v = toHira(i.value), cur = (yomiMap[n] && yomiMap[n].y) || '';
+    if (v !== cur) { yomiMap[n] = { y: v, t: Date.now() }; changed++; } // 空にしたときも、「消した」という記録を残す(ほかの端末にも伝わる)
+  });
+  if (changed) { saveYomiMap(); scheduleSync(); }
   $('#yomiDlg').close();
   renderLibrary(); renderRep();
-  toast('読み仮名を保存しました');
+  toast(changed ? '読み仮名を保存しました(' + changed + '件)' : '変更はありません');
 };
 
 // ---- 表(スプレッドシート)からの取り込み ----
