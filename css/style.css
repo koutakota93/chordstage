@@ -686,3 +686,14 @@ dialog .chips button { min-height: 40px; padding: 0 12px; font-size: 14px; }
 .badge.site { border: 0; color: var(--fg); cursor: pointer; }
 #repList li.rep .badge.site { min-height: 30px; padding: 0 12px; }
 .repbtn.lyr { color: var(--fg); border-color: var(--line); background: color-mix(in srgb, var(--fg) 6%, transparent); }
+
+/* 文字サイズのボタンは、固定の幅にする(「自動幅」と「固定」が切り替わっても、ボタンがずれず、続けて押せる) */
+.fsgroup button { flex: none; }
+.fsgroup #fsDown, .fsgroup #fsUp { width: 52px; min-width: 52px; padding: 0; }
+.fsgroup #btnAutoFit { width: 92px; min-width: 92px; padding: 0 4px; text-align: center; overflow: hidden; }
+#trLabel { display: inline-block; min-width: 52px; text-align: center; }
+#grLabel { display: inline-block; min-width: 44px; text-align: center; }
+@media (max-width: 900px) {
+  .fsgroup #fsDown, .fsgroup #fsUp { width: 44px; min-width: 44px; }
+  .fsgroup #btnAutoFit { width: 80px; min-width: 80px; }
+}

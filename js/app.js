@@ -2275,7 +2275,7 @@ const refit = () => { if (settings.autoFit) fitWidth({ silent: true }); else ref
 function updateAutoFitBtn() {
   const b = $('#btnAutoFit');
   b.classList.toggle('on', settings.autoFit);
-  b.textContent = settings.autoFit ? '自動幅' : '🔒 固定';
+  b.textContent = settings.autoFit ? '自動幅' : '🔒固定'; // 文字数が同じなので、切り替わってもボタンの幅は変わらない
   b.title = settings.autoFit ? '画面の幅に自動で合わせています(押すと、いまの文字サイズで固定)' : '文字サイズを固定しています(押すと、画面の幅に自動で合わせる)';
 }
 function setAutoFit(on, { quiet = false } = {}) {
@@ -2306,7 +2306,6 @@ const manualFont = (px) => { if (settings.autoFit) setAutoFit(false); setFont(px
 })();
 $('#fsDown').onclick = () => manualFont(settings.fontSize - 2);
 $('#fsUp').onclick = () => manualFont(settings.fontSize + 2);
-$('#fsFit').onclick = () => fitWidth();
 
 // 全画面表示: 上下のバーを全て隠して譜面を最大化する(☰で戻す)。次/前はペダル・キー・譜面タップで操作する。
 // 端末の「戻る」でも、全画面表示 → 通常表示 → 一覧、の順に戻る
