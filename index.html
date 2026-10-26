@@ -262,6 +262,20 @@
   </form>
 </dialog>
 
+<dialog id="dupDlg">
+  <form method="dialog">
+    <h3>同じ曲があります</h3>
+    <p id="dupMsg"></p>
+    <p class="hint" id="dupNew"></p>
+    <p class="hint">「上書きする」と、コード譜が新しい内容に置き換わります(メモ・移調・ハイライトの行数などは、そのまま残ります)。</p>
+    <div class="row end">
+      <button type="button" id="dupCancel">キャンセル</button>
+      <button type="button" id="dupNewBtn">別の曲として追加</button>
+      <button type="button" id="dupOver" class="primary">上書きする</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="renameDlg">
   <form method="dialog">
     <h3>曲の情報を変更</h3>

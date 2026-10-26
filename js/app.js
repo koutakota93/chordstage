@@ -1082,11 +1082,38 @@ async function commitSong(raw, meta, old) {
   toast((old ? '更新しました(' : '保存しました(') + chordCount + ' コード)');
   return song;
 }
+// 同じ曲(同じURL、または、曲名とアーティストが同じ)がすでにあれば、上書きするか確認する。
+// 上書きすると、メモ・移調・ハイライトの行数などは、そのまま残る
+let dupResolve = null;
+function askDup(old, incoming) {
+  $('#dupMsg').textContent = `「${old.title}」${old.artist ? '(' + old.artist + ')' : ''}は、すでに保存されています(最終更新: ${new Date(old.updatedAt || old.createdAt || Date.now()).toLocaleDateString('ja-JP')})。`;
+  $('#dupNew').textContent = incoming.title ? `新しい譜面: ${incoming.title}` : '';
+  $('#dupDlg').showModal();
+  return new Promise((resolve) => { dupResolve = resolve; });
+}
+const settleDup = (v) => { const r = dupResolve; dupResolve = null; if ($('#dupDlg').open) $('#dupDlg').close(); if (r) r(v); };
+$('#dupOver').onclick = () => settleDup('overwrite');
+$('#dupNewBtn').onclick = () => settleDup('new');
+$('#dupCancel').onclick = () => settleDup('cancel');
+$('#dupDlg').addEventListener('cancel', () => settleDup('cancel'));
+$('#dupDlg').addEventListener('close', () => settleDup('cancel'));
+async function saveOrAsk(raw, meta, { onAsk } = {}) {
+  const parsed = parseSong(raw, { title: meta.title, artist: meta.artist });
+  const probe = { title: meta.title || parsed.title, artist: meta.artist || parsed.artist };
+  const dup = songs.find((x) => (meta.url && x.url === meta.url) || sameSong(probe, x));
+  if (!dup) return commitSong(raw, meta, null);
+  if (onAsk) onAsk(dup);
+  const r = await askDup(dup, probe);
+  if (r === 'cancel') return null;
+  if (r === 'overwrite') return commitSong(raw, { ...meta, title: dup.title, artist: dup.artist, url: meta.url || dup.url }, dup);
+  return commitSong(raw, meta, null);
+}
 $('#iSave').onclick = async () => {
   const raw = $('#iText').value;
   if (!raw.trim()) return toast('コード譜が空です');
   const old = editingId && songs.find((s) => s.id === editingId);
-  const song = await commitSong(raw, { title: $('#iTitle').value.trim(), artist: $('#iArtist').value.trim(), url: $('#iUrl').value.trim() }, old);
+  const meta = { title: $('#iTitle').value.trim(), artist: $('#iArtist').value.trim(), url: $('#iUrl').value.trim() };
+  const song = old ? await commitSong(raw, meta, old) : await saveOrAsk(raw, meta);
   if (!song) return;
   importKeep = false;
   importDraft = null;
@@ -1128,8 +1155,7 @@ async function importFromHash() {
   const raw = params.get('kind') === 'rinne' ? rinneToText(params.get('import') || '') : params.get('import') || '';
   const url = params.get('url') || '';
   if (!raw.trim()) return;
-  const old = url && songs.find((s) => s.url === url);
-  const song = await commitSong(raw, { title: old ? old.title : cleanTitle(params.get('title') || ''), artist: old ? old.artist : params.get('artist') || '', url }, old);
+  const song = await saveOrAsk(raw, { title: cleanTitle(params.get('title') || ''), artist: params.get('artist') || '', url });
   if (song) openSong(song.id);
 }
 window.addEventListener('hashchange', importFromHash);
@@ -1140,12 +1166,13 @@ window.addEventListener('message', async (e) => {
   if (!d || d.cs !== 1 || typeof d.raw !== 'string') return;
   if (d.raw.length > 2000000) return;
   if (!(e.origin === location.origin || /^https:\/\/([\w-]+\.)?chordwiki\.org$/.test(e.origin))) return;
-  const old = d.url && songs.find((x) => x.url === d.url);
+  let asked = false;
   const text = d.kind === 'rinne' ? rinneToText(d.raw) : d.raw.slice(0, 300000);
-  const song = await commitSong(text, { title: old ? old.title : cleanTitle(String(d.title || '')), artist: old ? old.artist : String(d.artist || ''), url: d.url || '' }, old);
+  // 確認が要るときは、先に「確認中」の返事を返す(拡張機能が、アプリのタブを前に出せるように)
+  const song = await saveOrAsk(text, { title: cleanTitle(String(d.title || '')), artist: String(d.artist || ''), url: d.url || '' }, { onAsk: (dup) => { asked = true; if (e.source) e.source.postMessage({ cs: 'ack', title: dup.title, asking: true }, e.origin); } });
   if (!song) return;
   if ($('#importDlg').open) $('#importDlg').close();
-  if (e.source) e.source.postMessage({ cs: 'ack', title: song.title }, e.origin);
+  if (e.source && !asked) e.source.postMessage({ cs: 'ack', title: song.title }, e.origin);
   openSong(song.id); // 取り込んだ曲のコード譜を、そのまま開く
 });
 // アプリから開いたウィンドウ(window.opener が残る)でChordWikiを開く。ブラウザの分割画面/マルチウィンドウと併用する
