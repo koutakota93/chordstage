@@ -13,7 +13,10 @@ export const isBar = (t) => /^(?:\|\|:|:\|\||\|\||\|:|:\||\|\]|\||｜)$/.test(t)
 const TEMPO_RE = /(?:BPM|テンポ|tempo|[♩♪♫])\s*[=＝:：]?\s*(\d{2,3})(?!\d)/i;
 export const tempoOf = (v) => { const m = (v || '').match(TEMPO_RE); return m ? parseInt(m[1], 10) : 0; };
 
-export const isChord = (t) => CHORD_RE.test(t) || t === 'N.C.' || t === 'N.C';
+// 単音(ベース音だけ)の表記 /Ab や (/Ab)、かっこで囲んだコード (Am7) も、コードとして認識する
+const BASS_RE = new RegExp(`^\\(?/${ROOT}\\)?$`);
+const isChord0 = (t) => CHORD_RE.test(t) || t === 'N.C.' || t === 'N.C' || BASS_RE.test(t);
+export const isChord = (t) => isChord0(t) || (/^\(.+\)$/.test(t) && isChord0(t.slice(1, -1)));
 
 function isChordLine(line) {
   const toks = line.trim().split(/\s+/).filter((t) => !isBar(t) && !/^[%/\-()（）:：]+$/.test(t));
@@ -307,6 +310,10 @@ const idx = (n) => {
 // pref: 'auto' | 'sharp' | 'flat'。移調したあとの黒鍵を、♯と♭のどちらで書くか(auto: 下げるとき・元が♭のときは♭、それ以外は♯)
 export function transposeChord(chord, n, pref = 'auto') {
   if (!n || chord.startsWith('N.C')) return chord;
+  const w = chord.match(/^\((.+)\)$/); // かっこで囲んだコード (Am7)・(/Ab): 中身だけ移調する
+  if (w && (isChord0(w[1]) || /^\/[A-G]/.test(w[1]))) return '(' + transposeChord(w[1], n, pref) + ')';
+  const bass = chord.match(new RegExp(`^/(${ROOT})$`)); // ベース音だけ /Ab
+  if (bass) { const fl = pref === 'flat' ? true : pref === 'sharp' ? false : n < 0 || /[b♭]/.test(bass[1]); return '/' + (fl ? FLAT : SHARP)[(((idx(bass[1]) + n) % 12) + 12) % 12]; }
   const m = chord.match(new RegExp(`^(${ROOT})(.*?)(?:/(${ROOT}))?$`));
   if (!m) return chord;
   const flat = pref === 'flat' ? true : pref === 'sharp' ? false : n < 0 || /[b♭]/.test(m[1] + (m[3] || ''));
