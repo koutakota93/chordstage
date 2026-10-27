@@ -707,3 +707,11 @@ dialog .chips button { min-height: 40px; padding: 0 12px; font-size: 14px; }
 .yomilist input.miss { border-color: #f87171; }
 .artist .at em.unset { font-style: normal; font-size: 10.5px; font-weight: 800; color: #1a0f00; background: #fb923c; border-radius: 999px; padding: 0 7px; width: fit-content; margin-top: 2px; }
 .warnbtn { border-color: #fb923c !important; color: #fb923c; }
+
+/* ---- 一覧のページ全体は、画面内に収める(ページ全体と、列の中の、二重のスクロールをなくす)。アーティスト列と曲の列だけが、それぞれの中でスクロールする ---- */
+.libbody:has(#songsPane.browsing:not(.hidden)), .libbody:has(#repPane:not(.hidden)) { display: flex; flex-direction: column; overflow: auto; }
+#songsPane.browsing:not(.hidden), #repPane:not(.hidden) { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+#library:not(.roomy) #songsPane.browsing .browse, #library:not(.roomy) #repPane .browse, #songsPane.browsing .browse, #repPane .browse { height: auto !important; flex: 1 1 0; min-height: 240px; }
+#songsPane.browsing > *:not(.browse), #repPane > *:not(.browse) { flex: none; }
+#songsPane.browsing #songList, #songsPane.browsing #emptyMsg { flex: none; }
+#library > .libbody { flex: 1 1 0; min-height: 0; }
