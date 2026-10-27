@@ -190,7 +190,7 @@ function inheritChords(song) {
       const has = group.some((g) => g.chord);
       const head0 = group.find((g) => !g.time);
       // 小節の頭に、コードより先にリズム表記だけがあるとき(例: |---- [Gb9]----| )は、その部分も前のコードの続きとして、頭に付ける
-      if (has && last && head0 && !head0.chord && (head0.rhythm || isRhythmOnly(head0.text)) && head0.text !== undefined) { head0.chord = last; head0.inherited = true; }
+      if (has && last && head0 && !head0.chord && (head0.rhythm || (/[-=>≧○]/.test(head0.text || '') && isRhythmOnly(head0.text)))) { head0.chord = last; head0.inherited = true; }
       if (has) last = [...group].reverse().find((g) => g.chord).chord;
       else if (last) {
         const head = group.find((g) => !g.time);
