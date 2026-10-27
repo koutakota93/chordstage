@@ -33,8 +33,20 @@ const PRESETS = [
 const VIEW_DEFAULT = { sort: 'updated', group: 'none', style: 'browse', filter: 'all', tab: 'songs', fields: { artist: true, key: true, capo: true, bpm: false, tags: true, transpose: true, site: true }, density: 'compact', artistSort: 'name' };
 settings.keys = { ...DEFAULT_KEYS, ...(settings.keys || {}) };
 settings.view = { ...VIEW_DEFAULT, ...(settings.view || {}), fields: { ...VIEW_DEFAULT.fields, ...((settings.view || {}).fields || {}) } };
+// 読み仮名は、設定とは別に、名前ごとに「読み+更新時刻」で保存する(端末をまたいで同期するとき、新しい方を名前ごとに採用するので、消えない)
+let yomiMap = (() => { try { return JSON.parse(localStorage.getItem('cs.yomi') || '{}'); } catch { return {}; } })();
+const saveYomiMap = () => { try { localStorage.setItem('cs.yomi', JSON.stringify(yomiMap)); } catch {} };
+function migrateYomi() { // 設定に入っていた読み仮名(古い版の端末から届いたもの)を、新しい保存先へ移す(新しい読みは、上書きしない)
+  if (!settings.artistYomi) return;
+  for (const [n, y] of Object.entries(settings.artistYomi)) if (!yomiMap[n]) yomiMap[n] = { y, t: 1 };
+  delete settings.artistYomi;
+  saveYomiMap();
+}
+migrateYomi();
 // 設定の同期: 端末ごとに違うもの(文字サイズ・開いているタブ)は除く。変えた時刻(cs.settingsAt)が新しい方を採用する
-const syncSettings = () => { const { fontSize, ...r } = settings; const { tab, ...v } = settings.view || {}; return { ...r, view: v }; };
+// 読み仮名は、古い版の端末でも消えないよう、設定の中にも、読みだけの写し(artistYomi)を入れて同期する(正本は yomiMap)
+const yomiMirror = () => Object.fromEntries(Object.entries(yomiMap).filter(([, e]) => e && e.y).map(([n, e]) => [n, e.y]));
+const syncSettings = () => { const { fontSize, ...r } = settings; const { tab, ...v } = settings.view || {}; return { ...r, view: v, artistYomi: yomiMirror() }; };
 let lastSettingsStr = JSON.stringify(syncSettings());
 const getSettingsAt = () => Number(localStorage.getItem('cs.settingsAt') || 0);
 if (!settings.view.browseSeen) { settings.view.style = 'browse'; settings.view.browseSeen = true; } // 曲リストを、アーティスト一覧+曲リストの表示にする(一度だけ。「表示」でいつでも戻せる)
@@ -76,8 +88,8 @@ function adoptSettings(inc) {
   settings.keys = { ...DEFAULT_KEYS, ...(settings.keys || {}) };
   settings.view = { ...VIEW_DEFAULT, ...(settings.view || {}), fields: { ...VIEW_DEFAULT.fields, ...((settings.view || {}).fields || {}) }, tab: keep.tab };
   settings.fontSize = keep.fontSize;
+  migrateYomi(); // 届いた設定の中の読み仮名(写し)を、読み仮名の保存先へ、足りない分だけ取り込む
   lastSettingsStr = JSON.stringify(syncSettings());
-  if (typeof migrateYomi === 'function') migrateYomi(); // 古い版の端末から届いた設定に、読み仮名が入っていたら、読み仮名の保存先へ移す
   applySettings();
   updateAutoFitBtn();
   if (!$('#player').classList.contains('hidden')) refit();
@@ -224,16 +236,6 @@ const ARTIST_NONE = '(アーティスト不明)';
 const hasKanji = (t) => /[㐀-䶿一-鿿々〆]/.test(t);
 const toHira = (t) => String(t || '').normalize('NFKC').replace(/[ァ-ヶ]/g, (m) => String.fromCharCode(m.charCodeAt(0) - 0x60)).toLowerCase().trim();
 // 読み仮名: 設定した読み > 漢字を含まない名前はそのまま > なし(漢字で、読みが未設定)
-// 読み仮名は、設定とは別に、名前ごとに「読み+更新時刻」で保存する(端末をまたいで同期するとき、新しい方を名前ごとに採用するので、消えない)
-let yomiMap = (() => { try { return JSON.parse(localStorage.getItem('cs.yomi') || '{}'); } catch { return {}; } })();
-const saveYomiMap = () => { try { localStorage.setItem('cs.yomi', JSON.stringify(yomiMap)); } catch {} };
-function migrateYomi() { // 以前は、設定の中に入れていた。新しい保存先へ移す(新しい読みは、上書きしない)
-  if (!settings.artistYomi) return;
-  for (const [n, y] of Object.entries(settings.artistYomi)) if (!yomiMap[n]) yomiMap[n] = { y, t: 1 };
-  delete settings.artistYomi;
-  saveYomiMap();
-}
-migrateYomi();
 const yomiOf = (name) => { const e = yomiMap[name]; const y = e && e.y; return y ? toHira(y) : hasKanji(name) ? '' : toHira(name); };
 const needsYomi = (name) => !!name && name !== ARTIST_NONE && hasKanji(name) && !/^[A-Za-zＡ-Ｚａ-ｚ]/.test(name) && !(yomiMap[name] && yomiMap[name].y);
 const GYOU = ['あいうえおぁぃぅぇぉゔ', 'かきくけこ', 'さしすせそ', 'たちつてとっ', 'なにぬねの', 'はひふへほ', 'まみむめも', 'やゆよゃゅょ', 'らりるれろ', 'わをんゐゑゎ'];
@@ -1863,7 +1865,7 @@ $('#yomiSave').onclick = () => {
     const n = i.dataset.name, v = toHira(i.value), cur = (yomiMap[n] && yomiMap[n].y) || '';
     if (v !== cur) { yomiMap[n] = { y: v, t: Date.now() }; changed++; } // 空にしたときも、「消した」という記録を残す(ほかの端末にも伝わる)
   });
-  if (changed) { saveYomiMap(); scheduleSync(); }
+  if (changed) { saveYomiMap(); applySettings(); } // 設定の写しも変わるので、設定の同期にも載る
   $('#yomiDlg').close();
   renderLibrary(); renderRep();
   toast(changed ? '読み仮名を保存しました(' + changed + '件)' : '変更はありません');
@@ -2922,6 +2924,8 @@ $('#btnInstall').onclick = async () => {
   if (r.outcome === 'accepted') toast('インストールしています…');
   installEvt = null;
   updateInstallUi();
+const APP_VERSION = '2026-10-27 読み仮名の同期(v3)'; // 各端末が最新の版か、確認するための印
+$('#appVer').textContent = 'アプリの版: ' + APP_VERSION + '(端末ごとに違う場合は、「↻ 更新」を押してください)';
 };
 $('#btnDiag').onclick = async () => {
   const out = $('#diagOut');
