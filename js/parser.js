@@ -182,9 +182,9 @@ export function lineLyric(line) {
 // 小節線があるのに、コードが書かれていない小節は、前の小節の最後のコードを引き継いで、小節の頭に付ける。
 // 前の小節は、前の行でもよい。小節線のない行(コードと歌詞だけの行)には、この規則は使わない
 function inheritChords(song) {
-  let last = '';
   song.sections.forEach((sc) => sc.lines.forEach((ln) => {
     if (!ln.segs || !ln.segs.some((g) => g.bar)) return;
+    let last = ''; // この行の中で、直前の小節のコード。行をまたいでは引き継がない(行の頭の歌詞だけの小節は、歌詞だけを表示する)
     let group = [];
     const flush = () => {
       const has = group.some((g) => g.chord);
@@ -193,9 +193,8 @@ function inheritChords(song) {
       if (has && last && head0 && !head0.chord && (head0.rhythm || (/[-=>≧○]/.test(head0.text || '') && isRhythmOnly(head0.text)))) { head0.chord = last; head0.inherited = true; }
       if (has) last = [...group].reverse().find((g) => g.chord).chord;
       else if (last) {
-        const head = group.find((g) => !g.time);
         const content = group.some((g) => (g.text && g.text.trim()) || g.rhythm);
-        if (head && content) { head.chord = last; head.inherited = true; }
+        if (head0 && content) { head0.chord = last; head0.inherited = true; }
       }
       group = [];
     };

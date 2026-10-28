@@ -715,3 +715,12 @@ dialog .chips button { min-height: 40px; padding: 0 12px; font-size: 14px; }
 #songsPane.browsing > *:not(.browse), #repPane > *:not(.browse) { flex: none; }
 #songsPane.browsing #songList, #songsPane.browsing #emptyMsg { flex: none; }
 #library > .libbody { flex: 1 1 0; min-height: 0; }
+
+/* 移調(♭ 原調 ♯)と、表記(自動 / ♯ / ♭)のボタンは、固定の幅にする(押しても、ほかのボタンがずれない) */
+#trDown, #trUp { width: 44px; min-width: 44px; padding: 0; }
+#trLabel { width: 56px; min-width: 56px; }
+#accGroup { gap: 2px; }
+#accGroup .acclab { font-size: 12px; color: var(--dim); padding: 0 4px; white-space: nowrap; }
+#accGroup button { width: 52px; min-width: 52px; padding: 0; flex: none; }
+#accGroup button[data-acc="sharp"], #accGroup button[data-acc="flat"] { width: 44px; min-width: 44px; }
+@media (max-width: 900px) { #trDown, #trUp { width: 40px; min-width: 40px; } #trLabel { width: 48px; min-width: 48px; } #accGroup button { width: 46px; min-width: 46px; } #accGroup button[data-acc="sharp"], #accGroup button[data-acc="flat"] { width: 40px; min-width: 40px; } }

@@ -1922,7 +1922,6 @@ const playOv = () => { const set = playSet(); return set && set.overrides && set
 const effTranspose = () => { const o = playOv(); return o && o.transpose != null ? o.transpose : cur.transpose || 0; };
 const effCapo = () => { const o = playOv(); return o && o.capo != null ? o.capo : cur.capo || 0; };
 const disp = (c) => transposeChord(c, effTranspose(), cur.accidental || 'auto');
-const ACC_LABEL = { auto: '表記:自動', sharp: '表記:♯', flat: '表記:♭' };
 const persist = () => { cur.updatedAt = Date.now(); return db.putSong(cur); };
 
 let playCtx = null; // セットリストから開いたとき {setId}。前の曲/次の曲ボタンが使える
@@ -1939,7 +1938,7 @@ async function openSong(id, ctx = null) {
   showView('player');
   renderPlayer();
   played = false;
-  setMode(true); // 曲を開いたら、自動モードにする
+  setMode(false); // 曲を開いたときは、手動モード(標準)
   setFab(false);
   setPos(0, { scroll: false });
   $('#score').scrollTop = 0;
@@ -1955,7 +1954,7 @@ function renderPlayer() {
   $('#pMeta').textContent = [cur.artist, cur.key && 'Key ' + (effTranspose() ? transposeChord(cur.key, effTranspose(), cur.accidental || 'auto') + '(原調 ' + cur.key + ')' : cur.key), effCapo() && 'Capo ' + effCapo(), siteOf(cur)].filter(Boolean).join(' / ');
   const tr = effTranspose();
   $('#trLabel').textContent = tr ? (tr > 0 ? '+' : '') + tr : '原調';
-  $('#accBtn').textContent = ACC_LABEL[cur.accidental || 'auto'];
+  document.querySelectorAll('#accGroup button').forEach((b) => b.classList.toggle('on', b.dataset.acc === (cur.accidental || 'auto')));
   $('#grLabel').textContent = (cur.groupLines || DEFAULT_GROUP) + '行';
   const set = playCtx && setlists.find((x) => x.id === playCtx.setId);
   const order = set ? set.songIds.filter((id) => songs.some((x) => x.id === id)) : [];
@@ -2423,15 +2422,17 @@ async function transpose(d) {
   setPos(keep, { scroll: false });
 }
 // 移調後の黒鍵の書き方(♯系 / ♭系 / 自動)を切り替える。原調(移調0)のときは、元の表記のまま
-$('#accBtn').onclick = () => {
-  const order = ['auto', 'sharp', 'flat'];
-  cur.accidental = order[(order.indexOf(cur.accidental || 'auto') + 1) % order.length];
-  persist();
-  const keep = pos;
-  renderPlayer();
-  setPos(keep, { scroll: false });
-  toast(cur.accidental === 'auto' ? '移調後の表記: 自動' : cur.accidental === 'sharp' ? '移調後の表記: ♯を優先' : '移調後の表記: ♭を優先');
-};
+// 移調後のコードの表記: 自動 / ♯優先 / ♭優先 を、1回のタップで選ぶ
+document.querySelectorAll('#accGroup button').forEach((btn) => {
+  btn.onclick = () => {
+    if (!cur || (cur.accidental || 'auto') === btn.dataset.acc) return;
+    cur.accidental = btn.dataset.acc;
+    persist();
+    const keep = pos;
+    renderPlayer();
+    setPos(keep, { scroll: false });
+  };
+});
 $('#trUp').onclick = () => transpose(1);
 $('#trDown').onclick = () => transpose(-1);
 

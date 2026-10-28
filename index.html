@@ -125,7 +125,10 @@
     <div class="title"><b id="pTitle"></b><span id="pMeta"></span></div>
     <div class="sp"></div>
     <div class="group" title="移調">
-      <button id="trDown">♭</button><span id="trLabel">原調</span><button id="trUp">♯</button><button id="accBtn" title="移調後の表記: 自動 / ♯優先 / ♭優先">表記:自動</button>
+      <button id="trDown">♭</button><span id="trLabel">原調</span><button id="trUp">♯</button>
+    </div>
+    <div class="group" id="accGroup" title="移調後のコードの表記(♯優先 / ♭優先)">
+      <span class="acclab">表記</span><button data-acc="auto">自動</button><button data-acc="sharp">♯</button><button data-acc="flat">♭</button>
     </div>
     <div class="group fsgroup" title="文字サイズ(横幅にどれだけ入るか)">
       <button id="fsDown">A−</button><button id="btnAutoFit"></button><button id="fsUp">A＋</button>
