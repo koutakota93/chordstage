@@ -136,7 +136,11 @@
     <div class="group" title="一度にハイライトする行数">
       <button id="grDown">−</button><span id="grLabel">1行</span><button id="grUp">＋</button>
     </div>
+    <div class="group" id="stepGroup" title="「次へ」「前へ」を1回押したとき(ペダルも)に、進む・戻る行数">
+      <span class="acclab">送り</span><button id="stDown">−</button><span id="stLabel">1行</span><button id="stUp">＋</button>
+    </div>
     <button id="btnMemoMode">メモ</button>
+    <button id="btnEdit" title="コード譜のデータを編集">編集</button>
     <button id="btnInfo">情報</button>
     <button id="btnRange" title="歌詞の色の区切りの表示/非表示">区切り</button>
     <button class="themebtn"></button>
@@ -264,6 +268,24 @@
     <div class="row"><label class="filebtn">ファイルから読む<input id="riFile" type="file" accept=".csv,.tsv,.txt,text/csv,text/plain,text/tab-separated-values" hidden></label></div>
     <p id="riInfo" class="hint"></p>
     <div class="row end"><button value="cancel">キャンセル</button><button type="button" id="riGo" class="primary" disabled>取り込む</button></div>
+  </form>
+</dialog>
+
+<dialog id="editDlg" class="wide">
+  <form method="dialog">
+    <h3>コード譜を編集 <small id="edInfo" class="hint"></small></h3>
+    <div class="row"><label>曲名<input id="edTitle"></label><label>アーティスト<input id="edArtist"></label></div>
+    <div class="edtools">
+      <button type="button" data-ins="[|]">[|] 小節線</button>
+      <button type="button" data-ins="[]" data-back="1">[ ] コード</button>
+      <button type="button" data-ins="{c: }" data-back="1">{c:} 見出し</button>
+      <button type="button" data-ins="{ci: }" data-back="1">{ci:} 指示</button>
+      <button type="button" data-ins="{start_of_chorus}">サビ</button>
+      <button type="button" data-ins="\n">改行</button>
+    </div>
+    <textarea id="edText" spellcheck="false" wrap="off"></textarea>
+    <p class="hint">ChordWiki(ChordPro)形式です。コードは [C]、小節線は [|]、見出しは {c: Aメロ}、演奏上の指示は {ci: …}。保存すると、いま見ている画面の位置はそのままで、譜面が更新されます。</p>
+    <div class="row end"><button value="cancel">キャンセル</button><button type="button" id="edSave" class="primary">保存</button></div>
   </form>
 </dialog>
 

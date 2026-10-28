@@ -1956,6 +1956,7 @@ function renderPlayer() {
   $('#trLabel').textContent = tr ? (tr > 0 ? '+' : '') + tr : '原調';
   document.querySelectorAll('#accGroup button').forEach((b) => b.classList.toggle('on', b.dataset.acc === (cur.accidental || 'auto')));
   $('#grLabel').textContent = (cur.groupLines || DEFAULT_GROUP) + '行';
+  $('#stLabel').textContent = stepOf() + '行';
   const set = playCtx && setlists.find((x) => x.id === playCtx.setId);
   const order = set ? set.songIds.filter((id) => songs.some((x) => x.id === id)) : [];
   const idx = order.indexOf(cur.id);
@@ -2202,8 +2203,9 @@ function gotoSong(d) {
 $('#prevSong').onclick = () => gotoSong(-1);
 $('#nextSong').onclick = () => gotoSong(1);
 let armNext = false;
+const stepOf = () => Math.max(1, Math.min(8, (cur && cur.stepLines) || 1));
 const next = () => {
-  if (pos < blocks.length - 1) return jumpTo(pos + 1);
+  if (pos < blocks.length - 1) return jumpTo(Math.min(blocks.length - 1, pos + stepOf()));
   const t = setNeighbor(1);
   if (!t) return toast('最後です');
   if (armNext) { armNext = false; return gotoSong(1); }
@@ -2211,7 +2213,15 @@ const next = () => {
   toast('最後です。もう一度「次」で次の曲へ: ' + t.title);
   setTimeout(() => { armNext = false; }, 4000);
 };
-const prev = () => jumpTo(pos - 1);
+const prev = () => jumpTo(Math.max(0, pos - stepOf()));
+function setStep(n) {
+  n = Math.max(1, Math.min(8, n));
+  cur.stepLines = n;
+  persist();
+  $('#stLabel').textContent = n + '行';
+}
+$('#stDown').onclick = () => setStep(stepOf() - 1);
+$('#stUp').onclick = () => setStep(stepOf() + 1);
 $('#btnNext').onclick = next;
 $('#btnPrev').onclick = prev;
 
@@ -2963,6 +2973,46 @@ $('#btnDiag').onclick = async () => {
   out.textContent = L.join('\n');
 };
 updateInstallUi();
+
+// ---------- コード譜の編集 ----------
+function updateEdInfo() {
+  const p = parseSong($('#edText').value, { title: $('#edTitle').value, artist: $('#edArtist').value });
+  const chords = p.sections.reduce((n, sc) => n + sc.lines.reduce((m, l) => m + (l.segs ? l.segs.filter((g) => g.chord).length : 0), 0), 0);
+  $('#edInfo').textContent = `(${p.sections.length}セクション / ${chords}コード)`;
+}
+$('#btnEdit').onclick = () => {
+  if (!cur) return;
+  $('#edTitle').value = cur.title || ''; $('#edArtist').value = cur.artist || ''; $('#edText').value = cur.raw || '';
+  updateEdInfo();
+  $('#editDlg').showModal();
+};
+$('#edText').addEventListener('input', updateEdInfo);
+document.querySelectorAll('.edtools button').forEach((b) => {
+  b.onclick = () => {
+    const t = $('#edText');
+    const ins = b.dataset.ins.replace(/\\n/g, '\n');
+    const st = t.selectionStart, en = t.selectionEnd;
+    t.setRangeText(ins, st, en, 'end');
+    if (b.dataset.back) t.selectionStart = t.selectionEnd = st + ins.length - 1; // 括弧の中へカーソルを置く
+    t.focus();
+    updateEdInfo();
+  };
+});
+$('#edSave').onclick = async () => {
+  const raw = $('#edText').value;
+  if (!raw.trim()) return toast('コード譜が空です');
+  const keep = pos, wasAuto = autoMode;
+  cur.raw = raw;
+  cur.title = $('#edTitle').value.trim() || cur.title;
+  cur.artist = $('#edArtist').value.trim();
+  await persist();
+  $('#editDlg').close();
+  await loadLibrary();
+  await openSong(cur.id, playCtx); // 同じ曲を、新しい内容で開き直す(画面の位置は、あとで戻す)
+  if (wasAuto) setMode(true);
+  setPos(keep);
+  toast('保存しました');
+};
 
 // ---------- 起動 ----------
 applySettings();
