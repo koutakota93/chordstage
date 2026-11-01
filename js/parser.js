@@ -308,7 +308,7 @@ const idx = (n) => {
 
 // pref: 'auto' | 'sharp' | 'flat'。移調したあとの黒鍵を、♯と♭のどちらで書くか(auto: 下げるとき・元が♭のときは♭、それ以外は♯)
 export function transposeChord(chord, n, pref = 'auto') {
-  if (!n || chord.startsWith('N.C')) return chord;
+  if ((!n && pref === 'auto') || chord.startsWith('N.C')) return chord; // 移調しないときも、♯優先・♭優先を選んだら、書き方を変える
   const w = chord.match(/^\((.+)\)$/); // かっこで囲んだコード (Am7)・(/Ab): 中身だけ移調する
   if (w && (isChord0(w[1]) || /^\/[A-G]/.test(w[1]))) return '(' + transposeChord(w[1], n, pref) + ')';
   const bass = chord.match(new RegExp(`^/(${ROOT})$`)); // ベース音だけ /Ab

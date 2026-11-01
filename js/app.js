@@ -1158,7 +1158,7 @@ if(!t||t.trim().length<5){alert('譜面を取り出せませんでした。譜�
 const note=m=>{const d=document.createElement('div');d.textContent=m;d.style.cssText='position:fixed;top:12px;left:12px;right:12px;margin:auto;width:fit-content;background:#111;color:#fff;padding:12px 18px;border-radius:10px;z-index:2147483647;font:16px sans-serif';document.body.append(d);setTimeout(()=>d.remove(),3000)};
 const k=await new Promise(r=>{if(!window.opener||window.opener.closed)return r(null);const h=e=>{if(e.origin===O&&e.data&&e.data.cs==='ack'){removeEventListener('message',h);r(e.data)}};addEventListener('message',h);try{window.opener.postMessage({cs:1,raw:t,url:u,title:ti,artist:ar,kind:kd},O)}catch(x){return r(null)}setTimeout(()=>{removeEventListener('message',h);r(null)},1500)});
 if(k){note('ChordStageに取り込みました: '+(k.title||''));return}
-location.href='${app}\\x23import='+encodeURIComponent(t)+'&url='+encodeURIComponent(u)+'&title='+encodeURIComponent(ti)+'&artist='+encodeURIComponent(ar)+'&kind='+kd}catch(e){alert('取り込みに失敗しました: '+e.message)}})()`;
+const nu='${app}\\x23import='+encodeURIComponent(t)+'&url='+encodeURIComponent(u)+'&title='+encodeURIComponent(ti)+'&artist='+encodeURIComponent(ar)+'&kind='+kd;const w=window.open(nu,'_blank');if(!w)location.href=nu}catch(e){alert('取り込みに失敗しました: '+e.message)}})()`;
   return 'javascript:' + code.replace(/\n/g, '');
 }
 $('#bmCopy').onclick = async () => {
@@ -1177,7 +1177,10 @@ async function importFromHash() {
   const url = params.get('url') || '';
   if (!raw.trim()) return;
   const song = await saveOrAsk(raw, { title: cleanTitle(params.get('title') || ''), artist: params.get('artist') || '', url });
-  if (song) openSong(song.id);
+  if (song) {
+    openSong(song.id);
+    if (/Android/i.test(navigator.userAgent) && !isStandalone()) toast('追加しました。ホーム画面のChordStageアプリにも、この曲が入っています');
+  }
 }
 window.addEventListener('hashchange', importFromHash);
 
@@ -1951,9 +1954,9 @@ async function openSong(id, ctx = null) {
 
 function renderPlayer() {
   $('#pTitle').textContent = cur.title;
-  $('#pMeta').textContent = [cur.artist, cur.key && 'Key ' + (effTranspose() ? transposeChord(cur.key, effTranspose(), cur.accidental || 'auto') + '(原調 ' + cur.key + ')' : cur.key), effCapo() && 'Capo ' + effCapo(), siteOf(cur)].filter(Boolean).join(' / ');
+  $('#pMeta').textContent = [cur.artist, cur.key && 'Key ' + (effTranspose() || (cur.accidental || 'auto') !== 'auto' ? transposeChord(cur.key, effTranspose(), cur.accidental || 'auto') + (effTranspose() ? '(原調 ' + cur.key + ')' : '') : cur.key), effCapo() && 'Capo ' + effCapo(), siteOf(cur)].filter(Boolean).join(' / ');
   const tr = effTranspose();
-  $('#trLabel').textContent = tr ? (tr > 0 ? '+' : '') + tr : '原調';
+  buildKeySel(tr);
   document.querySelectorAll('#accGroup button').forEach((b) => b.classList.toggle('on', b.dataset.acc === (cur.accidental || 'auto')));
   $('#grLabel').textContent = (cur.groupLines || DEFAULT_GROUP) + '行';
   $('#stLabel').textContent = stepOf() + '行';
@@ -2415,22 +2418,37 @@ window.addEventListener('popstate', (e) => {
 
 // 移調
 const wrap12 = (n) => ((n + 5) % 12 + 12) % 12 - 5;
-async function transpose(d) {
+async function setTransposeTo(n) {
   const set = playSet();
   if (set) {
     // セットリスト経由のときは、この曲のキーをセットリスト側に保存する(曲本体は変えない)
     set.overrides = set.overrides || {};
     const o = set.overrides[cur.id] || {};
-    set.overrides[cur.id] = { ...o, transpose: wrap12(effTranspose() + d) };
+    set.overrides[cur.id] = { ...o, transpose: wrap12(n) };
     await saveSet(set);
   } else {
-    cur.transpose = wrap12((cur.transpose || 0) + d);
+    cur.transpose = wrap12(n);
     persist();
   }
   const keep = pos;
   renderPlayer();
   setPos(keep, { scroll: false });
 }
+// キーは、プルダウンで選ぶ(原調からの半音の数 -5〜+6。曲のキーが分かれば、移調後のキー名も出す)
+function buildKeySel(tr) {
+  const sel = $('#keySel');
+  const acc = cur.accidental || 'auto';
+  sel.textContent = '';
+  for (let n = -5; n <= 6; n++) {
+    const name = cur.key ? transposeChord(cur.key, n, acc) : '';
+    const label = n === 0 ? '原調' + (cur.key ? ' ' + transposeChord(cur.key, 0, acc) : '') : (name ? name + '  ' : '') + '(' + (n > 0 ? '+' : '') + n + ')';
+    const o = el('option', '', label);
+    o.value = String(n);
+    sel.append(o);
+  }
+  sel.value = String(wrap12(tr));
+}
+$('#keySel').onchange = () => setTransposeTo(Number($('#keySel').value));
 // 移調後の黒鍵の書き方(♯系 / ♭系 / 自動)を切り替える。原調(移調0)のときは、元の表記のまま
 // 移調後のコードの表記: 自動 / ♯優先 / ♭優先 を、1回のタップで選ぶ
 document.querySelectorAll('#accGroup button').forEach((btn) => {
@@ -2443,8 +2461,6 @@ document.querySelectorAll('#accGroup button').forEach((btn) => {
     setPos(keep, { scroll: false });
   };
 });
-$('#trUp').onclick = () => transpose(1);
-$('#trDown').onclick = () => transpose(-1);
 
 // ハイライトする行数(曲ごと)。次へ進むたびに1行ずつずれる
 function setGroup(n) {
