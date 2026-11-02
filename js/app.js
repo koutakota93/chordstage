@@ -1554,12 +1554,8 @@ $('#gdRestore').onclick = async () => {
   } catch (e) { toast(e.message); }
 };
 // ファイルでの書き出し / 共有 / 復元(Googleドライブを設定しなくても使える)
-// Androidアプリ(WebView)では、ファイルのダウンロードや共有ができないので、アプリ側の機能(AndroidBridge)を使う
-const bridge = window.AndroidBridge || null;
-const toB64 = (text) => btoa(unescape(encodeURIComponent(text)));
 $('#fileExport').onclick = () => {
   if (!needSongs()) return;
-  if (bridge) { if (!bridge.saveFile(backupFileName(), 'application/json', toB64(backupJson()))) toast('保存できませんでした'); return; }
   const a = el('a');
   a.href = URL.createObjectURL(new Blob([backupJson()], { type: 'application/json' }));
   a.download = backupFileName();
@@ -1568,7 +1564,6 @@ $('#fileExport').onclick = () => {
 };
 $('#fileShare').onclick = async () => {
   if (!needSongs()) return;
-  if (bridge) { const j = backupJson(); if (j.length < 400000) bridge.shareText('ChordStageバックアップ', j); else if (bridge.saveFile(backupFileName(), 'application/json', toB64(j))) toast('大きいので、ダウンロードフォルダに保存しました'); return; }
   // Chromeの共有はJSONファイルを受け付けないので、テキストファイル(.txt)として共有する。取り込み側は中身で判定する
   const name = backupFileName().replace(/\.json$/, '.txt');
   const json = backupJson();
