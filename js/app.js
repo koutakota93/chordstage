@@ -647,63 +647,78 @@ function updateSvBar() {
   });
 }
 // 並べ替え(ドラッグ): 左端の「⠿」をつかんで、上下に動かす。指を離した位置で順番が決まる
+// セットリストの曲を、つかんで(左端の「⠿」)ドラッグして並べ替える。
+// つかんだ曲は、指にぴったり付いてきて、ほかの曲は、場所をあけるように、すっと動く(ドラッグ中は、並べ替えずに、見た目だけ動かし、離したときに、まとめて確定する)
 function enableDrag(ol) {
   ol.querySelectorAll('.drag').forEach((grip) => {
     grip.addEventListener('pointerdown', (e) => {
       if (e.pointerType === 'mouse' && e.button !== 0) return;
       e.preventDefault();
+      const items = [...ol.children];
       const li = grip.closest('li');
+      const from = items.indexOf(li);
+      if (from < 0 || items.length < 2) return;
       const scroller = ol.closest('.libbody');
-      let startY = e.clientY;
-      let lastY = e.clientY;
+      const base = ol.getBoundingClientRect().top;
+      const rects = items.map((it) => { const r = it.getBoundingClientRect(); return { top: r.top - base, h: r.height }; });
+      const gap = rects.length > 1 ? Math.max(0, rects[1].top - rects[0].top - rects[0].h) : 0;
+      const startY = e.clientY, startScroll = scroller.scrollTop;
+      let lastY = startY;
+      let to = from;
+      let tops = rects.map((r) => r.top); // 並べ替えたあとの、各曲の位置
+      try { grip.setPointerCapture(e.pointerId); } catch {}
+      try { navigator.vibrate && navigator.vibrate(12); } catch {}
+      ol.classList.add('sorting');
       li.classList.add('dragging');
-      const place = () => { li.style.transform = `translateY(${lastY - startY}px)`; };
-      const reorder = () => {
-        for (;;) {
-          const r = li.getBoundingClientRect();
-          const mid = (r.top + r.bottom) / 2;
-          const prev = li.previousElementSibling;
-          const next = li.nextElementSibling;
-          const before = li.offsetTop;
-          if (next && mid > (next.getBoundingClientRect().top + next.getBoundingClientRect().bottom) / 2) ol.insertBefore(next, li);
-          else if (prev && mid < (prev.getBoundingClientRect().top + prev.getBoundingClientRect().bottom) / 2) ol.insertBefore(li, prev);
-          else break;
-          startY += li.offsetTop - before; // 自然な位置が動いたぶん、基準を合わせる
-          place();
+      const dyNow = () => (lastY - startY) + (scroller.scrollTop - startScroll);
+      const layout = () => {
+        const dy = dyNow();
+        li.style.transform = `translateY(${dy}px) scale(1.02)`;
+        const c = rects[from].top + rects[from].h / 2 + dy; // つかんだ曲の中心
+        const others = items.map((_, i) => i).filter((i) => i !== from);
+        let acc = rects[0].top;
+        let k = 0; // 並べ替え後の順番で、位置を積み上げる
+        to = 0;
+        for (const i of others) { // つかんだ曲より、上に置かれる曲の数を数える
+          const mid = rects[i].top + rects[i].h / 2;
+          if (mid < c) to++;
         }
+        const order = [...others.slice(0, to), from, ...others.slice(to)];
+        tops = [];
+        order.forEach((i) => { tops[i] = acc; acc += rects[i].h + gap; k++; });
+        items.forEach((it, i) => { if (i !== from) it.style.transform = `translateY(${tops[i] - rects[i].top}px)`; });
       };
-      let scrollTimer = 0;
+      let timer = 0;
       const autoScroll = () => {
         const r = scroller.getBoundingClientRect();
-        const dir = lastY < r.top + 60 ? -1 : lastY > r.bottom - 60 ? 1 : 0;
-        if (dir) {
-          const before = scroller.scrollTop;
-          scroller.scrollTop += dir * 12;
-          startY -= scroller.scrollTop - before; // スクロールしたぶん、つかんだ曲が指から離れないように基準を動かす
-          place();
-          reorder();
-        }
+        const dir = lastY < r.top + 70 ? -1 : lastY > r.bottom - 70 ? 1 : 0;
+        if (dir) { scroller.scrollTop += dir * 14; layout(); }
       };
-      const move = (ev) => { lastY = ev.clientY; place(); reorder(); };
-      const up = async () => {
-        document.removeEventListener('pointermove', move);
-        document.removeEventListener('pointerup', up);
-        document.removeEventListener('pointercancel', up);
-        clearInterval(scrollTimer);
+      const move = (ev) => { lastY = ev.clientY; layout(); };
+      const up = () => {
+        grip.removeEventListener('pointermove', move);
+        grip.removeEventListener('pointerup', up);
+        grip.removeEventListener('pointercancel', up);
+        clearInterval(timer);
         li.classList.remove('dragging');
-        li.style.transform = '';
-        const set = setlists.find((x) => x.id === curSetId);
-        const ids = [...ol.children].map((c) => c.dataset.id);
-        const rest = set.songIds.filter((id) => !ids.includes(id)); // 表示されていない曲は、末尾に残す
-        const changed = ids.some((id, i) => id !== set.songIds[i]);
-        if (changed) { set.songIds = [...ids, ...rest]; await saveSet(set); }
-        renderSetView();
+        li.classList.add('settling');
+        li.style.transform = `translateY(${tops[from] - rects[from].top}px)`; // 空いた場所へ、すっと収まる
+        setTimeout(async () => {
+          const order = items.map((_, i) => i).filter((i) => i !== from);
+          order.splice(to, 0, from);
+          const ids = order.map((i) => items[i].dataset.id);
+          const set = setlists.find((x) => x.id === curSetId);
+          const rest = set.songIds.filter((id) => !ids.includes(id)); // 表示されていない曲は、末尾に残す
+          if (ids.some((id, i) => id !== set.songIds[i])) { set.songIds = [...ids, ...rest]; await saveSet(set); }
+          ol.classList.remove('sorting');
+          renderSetView();
+        }, 190);
       };
-      document.addEventListener('pointermove', move);
-      document.addEventListener('pointerup', up);
-      document.addEventListener('pointercancel', up);
-      scrollTimer = setInterval(autoScroll, 40);
-      place();
+      grip.addEventListener('pointermove', move);
+      grip.addEventListener('pointerup', up);
+      grip.addEventListener('pointercancel', up);
+      timer = setInterval(autoScroll, 30);
+      layout();
     });
   });
 }
@@ -1969,18 +1984,36 @@ function renderPlayer() {
   renderScore();
 }
 
-// 演奏メモを行に対応付ける(再取り込みで行位置が変わっても、歌詞テキストで探し直す)
+// 演奏メモを行に対応付ける。まず、メモを書いた位置(セクション・行)に、同じ歌詞の行があれば、そこ。
+// 行の位置が変わっていたら(再取り込み・編集のあと)、同じ歌詞の行のうち、元の位置にいちばん近い行を探す。
+// (同じ歌詞の行が、サビなどで何度も出てくるので、「最初に見つかった行」にしてはいけない)
 function resolveMemos() {
   const map = new Map();
-  const used = new Set();
   const lyrics = [];
-  parsed.sections.forEach((sec, si) => sec.lines.forEach((ln, li) => { if (!ln.blank && !ln.note) lyrics.push({ si, li, text: lineLyric(ln).trim() }); }));
+  const at = new Map();
+  parsed.sections.forEach((sec, si) => sec.lines.forEach((ln, li) => {
+    if (ln.blank || ln.note) return;
+    const x = { si, li, text: lineLyric(ln).trim() };
+    lyrics.push(x);
+    at.set(si + ':' + li, x);
+  }));
+  const keyOf = (si, li) => si * 10000 + li;
   (cur.memos || []).forEach((m) => {
-    let hit = m.anchor && lyrics.find((x) => x.text === m.anchor && !used.has(x.si + ':' + x.li));
-    if (!hit) hit = lyrics.find((x) => x.si === m.si && x.li === m.li);
+    let hit = at.get(m.si + ':' + m.li);
+    if (!(hit && (!m.anchor || hit.text === m.anchor))) {
+      hit = null;
+      if (m.anchor) {
+        let best = Infinity;
+        lyrics.forEach((x) => {
+          if (x.text !== m.anchor) return;
+          const d = Math.abs(keyOf(x.si, x.li) - keyOf(m.si, m.li));
+          if (d < best) { best = d; hit = x; }
+        });
+      }
+      if (!hit) hit = at.get(m.si + ':' + m.li); // 歌詞が書き換わっていたら、元の位置のまま
+    }
     if (!hit) return;
     const k = hit.si + ':' + hit.li;
-    used.add(k);
     m.si = hit.si; m.li = hit.li;
     if (!map.has(k)) map.set(k, []);
     map.get(k).push(m);

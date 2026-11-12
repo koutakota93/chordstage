@@ -739,3 +739,12 @@ dialog.wide { width: min(900px, 96vw); }
 /* キー(移調)のプルダウン: 固定の幅 */
 #keySel { width: 136px; min-width: 136px; min-height: 44px; padding: 0 8px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); font-size: 15px; font-weight: 700; }
 @media (max-width: 900px) { #keySel { width: 116px; min-width: 116px; min-height: 40px; font-size: 14px; } }
+
+/* セットリストのドラッグ: つかんだ曲は、指にぴったり付き(動きの遅れなし)、ほかの曲は、すっと動いて場所をあける */
+#svList { position: relative; }
+#svList.sorting { user-select: none; -webkit-user-select: none; }
+#svList.sorting li { transition: transform .2s cubic-bezier(.2, .8, .2, 1); will-change: transform; }
+#svList.sorting li.dragging { transition: none; z-index: 20; opacity: 1; box-shadow: 0 14px 34px rgba(0,0,0,.45); border-color: var(--accent); }
+#svList.sorting li.settling { transition: transform .18s cubic-bezier(.2, .8, .2, 1), box-shadow .18s; z-index: 20; }
+#svList li .drag { width: 52px; min-width: 52px; border-radius: 10px; }
+#svList li .drag:active { background: color-mix(in srgb, var(--accent) 18%, transparent); }
