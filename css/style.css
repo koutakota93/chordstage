@@ -912,3 +912,8 @@ dialog.wide { width: min(900px, 96vw); }
   #player > .bar#playerBar button { padding: 0 5px; }
   #player > .bar#playerBar { gap: 2px; padding: 4px 4px; }
 }
+/* セットリスト以外では、ライブメモのパネルは、メモだけ */
+#liveBar.noSet > :not([data-tool="memo"]) { display: none !important; }
+#liveBar .lvwd input[type=range] { width: 42px; }
+#liveBar .lvsw button, #liveBar .lvsw input[type=color] { width: 22px !important; height: 22px !important; min-width: 22px !important; min-height: 22px !important; }
+#liveBar { gap: 3px !important; }

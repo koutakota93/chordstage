@@ -1952,7 +1952,7 @@ async function openSong(id, ctx = null) {
   stopAuto();
   setFocus(false);
   memoMode = false;
-  $('#btnMemoMode').classList.remove('on');
+  if (liveTool === 'memo') setLiveTool('memo'); // メモの編集を、閉じておく
   showView('player');
   renderPlayer();
   played = false;
@@ -1980,8 +1980,8 @@ function renderPlayer() {
   $('#prevSong').classList.toggle('hidden', !(set && idx > 0));
   $('#nextSong').classList.toggle('hidden', !(set && idx >= 0 && idx < order.length - 1));
   if (set && idx >= 0) $('#pMeta').textContent = '【' + set.name + ' ' + (idx + 1) + '/' + order.length + '】 ' + $('#pMeta').textContent;
-  $('#btnLive').classList.toggle('hidden', !set);
-  if (!set && liveTool !== null) closeLive();
+  $('#liveBar').classList.toggle('noSet', !set); // セットリスト以外では、メモだけ(手書き・省略は、セットリスト専用)
+  if (!set && liveTool !== null && liveTool !== 'memo') setLiveTool(liveTool);
   renderScore();
 }
 
@@ -2787,12 +2787,7 @@ $('#mDelete').onclick = async () => {
   $('#memoDlg').close();
   await saveMemos();
 };
-$('#btnMemoMode').onclick = () => {
-  memoMode = !memoMode;
-  $('#btnMemoMode').classList.toggle('on', memoMode);
-  $('#score').classList.toggle('memo-mode', memoMode);
-  if (memoMode) toast('メモ編集モード: 行の「＋ メモ」を押してください');
-};
+// (メモの編集は、「ライブメモ」の「メモ」から)
 
 // ---------- 曲情報 ----------
 $('#btnInfo').onclick = () => {
@@ -3631,6 +3626,9 @@ function setLiveTool(t) {
   if (!inkToolOn()) resetInkZoom();
   $('#liveBar').classList.toggle('lassoMode', liveTool === 'lasso'); // 投げ縄のときは、ペンの設定を隠して、横1列に収める
   if (liveTool !== 'lasso') { lassoSel = new Set(); lassoPath = null; lassoDrag = null; queueInk(); }
+  memoMode = liveTool === 'memo';
+  $('#score').classList.toggle('memo-mode', memoMode);
+  if (memoMode) toast('メモ: 行の「＋ メモ」を押してください(メモをタップで編集)');
   if (liveTool === 'erase') toast('消しゴムモード: ペンでなぞった線を消します');
   if (liveTool === 'skipLine') toast('省略したい行を、タップしてください(もう一度タップで、復元)');
   if (liveTool === 'skipBar') toast('省略したい小節を、タップしてください(もう一度タップで、復元)');
@@ -3660,7 +3658,8 @@ $('#btnLive').onclick = () => {
   if (!open) return closeLive();
   $('#liveBar').classList.remove('hidden');
   $('#btnLive').classList.add('on');
-  if (liveTool !== 'pen') setLiveTool('pen'); // ライブ編集に入ったら、手書きモードを、オンにしておく
+  const first = playSet() ? 'pen' : 'memo'; // ライブメモを開いたら、手書き(セットリスト以外では、メモ)を、オンにしておく
+  if (liveTool !== first) setLiveTool(first);
 };
 
 // ---------- コードのその場編集(コードをダブルタップ) ----------
