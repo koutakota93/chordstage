@@ -3148,7 +3148,7 @@ function setupInk() {
 }
 function sizeInk() {
   const cv = inkCv(), score = $('#score');
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const dpr = Math.min((window.devicePixelRatio || 1) * inkZ, 3); // 拡大しているときは、細かく描く
   const w = score.clientWidth, h = score.clientHeight;
   if (!w || !h) return cv._ctx || cv.getContext('2d'); // 全画面への切り替え中など、大きさが0のときは、作り直さない
   if (cv._w !== w || cv._h !== h || cv._d !== dpr) {
@@ -3228,11 +3228,24 @@ function inkToCanvas(st, cr, rects, fsNow = curFs()) {
   if (!r) { r = blk.el.getBoundingClientRect(); if (rects) rects.set(st.b, r); }
   if (st.v === 2) {
     const k = Math.abs(fsNow - st.fs) < 0.01 ? 1 : fsNow / st.fs;
-    return st.p.map(([x, y]) => [r.left - cr.left + x * k, r.top - cr.top + y * k]);
+    return st.p.map(([x, y]) => [(r.left - cr.left) / inkZ + x * k, (r.top - cr.top) / inkZ + y * k]);
   }
-  return st.p.map(([x, y]) => [r.left - cr.left + x * r.width, r.top - cr.top + y * r.height]);
+  return st.p.map(([x, y]) => [(r.left - cr.left) / inkZ + x * r.width / inkZ, (r.top - cr.top) / inkZ + y * r.height / inkZ]);
 }
 const inkId = () => 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+// 手書き中の拡大(見た目だけ): 行の幅や文字サイズは、そのままで、譜面と手書きを、まとめて拡大して見せる(書き込みやすくするため)
+let inkZ = 1, inkTx = 0;
+function applyInkZoom() {
+  const st = document.querySelector('.stage');
+  inkZ = Math.max(1, Math.min(3, inkZ));
+  const sw = $('#score').clientWidth;
+  inkTx = Math.max(-(sw * inkZ - sw), Math.min(0, inkTx));
+  st.style.setProperty('--z', inkZ);
+  st.style.setProperty('--tx', inkTx + 'px');
+  st.classList.toggle('zoomed', inkZ > 1.001);
+  queueInk();
+}
+function resetInkZoom() { if (inkZ !== 1 || inkTx !== 0) { inkZ = 1; inkTx = 0; applyInkZoom(); } }
 let lassoSel = new Set();      // 投げ縄で選んだ線(id)
 let lassoDrag = null;          // 選んだ線を動かしている最中の、ずれ(px)
 let lassoPath = null;          // 投げ縄で、なぞっている最中の線(キャンバス上の座標)
@@ -3248,7 +3261,7 @@ function migrateInk(o, cr, fs) {
     const blk = blocks[st.b];
     if (!pts || !blk) return;
     const r = rects.get(st.b);
-    st.p = pts.map(([x, y]) => [+(x - (r.left - cr.left)).toFixed(2), +(y - (r.top - cr.top)).toFixed(2)]);
+    st.p = pts.map(([x, y]) => [+(x - (r.left - cr.left) / inkZ).toFixed(2), +(y - (r.top - cr.top) / inkZ).toFixed(2)]);
     st.v = 2; st.fs = +fs.toFixed(3);
     changed = true;
   });
@@ -3293,7 +3306,7 @@ function blockAtY(y, cr) { // キャンバス上のy座標に、いちばん近�
   let best = 0, bd = Infinity;
   blocks.forEach((b, i) => {
     const r = b.el.getBoundingClientRect();
-    const top = r.top - cr.top, bottom = r.bottom - cr.top;
+    const top = (r.top - cr.top) / inkZ, bottom = (r.bottom - cr.top) / inkZ;
     const d = y >= top && y <= bottom ? 0 : Math.min(Math.abs(y - top), Math.abs(y - bottom));
     if (d < bd) { bd = d; best = i; }
   });
@@ -3375,12 +3388,23 @@ function recognizeShape(pts, force) {
 (() => {
   let drawing = null, touchId = null, holdTimer = 0, flingRaf = 0;
   // 指でさわっているときは、自由にスクロールする(縦・横。指を離したあとは、勢いで、なめらかに止まる)
-  const scrollNow = (dx, dy) => $('#score').scrollBy({ left: dx, top: dy, behavior: 'instant' });
-  // 手書き中も、2本の指で、ピンチして、譜面を拡大・縮小できる(文字サイズを変える。手書きは、文字サイズに合わせて、付いてくる)
+  const scrollNow = (dx, dy) => { if (inkZ > 1.001) { inkTx -= dx; applyInkZoom(); } $('#score').scrollBy({ left: inkZ > 1.001 ? 0 : dx, top: dy / inkZ, behavior: 'instant' }); };
+  // 手書き中は、2本の指で、ピンチして、見た目だけ拡大・縮小する(行の幅・文字サイズは、そのまま。書き込みやすくするためだけ)
   const touches = new Map();
   let pinch = null, pinchRaf = 0;
   const pinchDist = () => { const [a, b] = [...touches.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
-  const pinchApply = () => { pinchRaf = 0; if (pinch) manualFont(Math.max(MIN_FONT, Math.min(60, pinch.f0 * pinch.ratio))); };
+  const pinchCenter = () => { const [a, b] = [...touches.values()]; const r = $('.stage').getBoundingClientRect(); return { x: (a.x + b.x) / 2 - r.left, y: (a.y + b.y) / 2 - r.top }; };
+  const pinchApply = () => {
+    pinchRaf = 0;
+    if (!pinch) return;
+    const z1 = Math.max(1, Math.min(3, pinch.z0 * pinch.ratio));
+    const c = pinch.c; // ピンチの中心の下にある場所が、動かないように、ずらす
+    const cx = (c.x - pinch.tx0) / pinch.z0;
+    inkZ = z1;
+    inkTx = c.x - cx * z1;
+    $('#score').scrollBy({ top: (c.y / pinch.z0 + pinch.sT0 - c.y / z1) - $('#score').scrollTop, behavior: 'instant' });
+    applyInkZoom();
+  };
   let tch = null;
   const touchStart = (e) => { cancelAnimationFrame(flingRaf); tch = { x: e.clientX, y: e.clientY, t: performance.now(), vx: 0, vy: 0 }; };
   const touchMove = (e) => {
@@ -3414,7 +3438,7 @@ function recognizeShape(pts, force) {
     const b = blockAtY(pts[0][1], cr);
     const r = blocks[b].el.getBoundingClientRect();
     const fs = curFs();
-    return { id: id || inkId(), v: 2, b, c: color, fs: +fs.toFixed(3), w: wFrac, p: pts.map(([x, y]) => [+(x - (r.left - cr.left)).toFixed(2), +(y - (r.top - cr.top)).toFixed(2)]) };
+    return { id: id || inkId(), v: 2, b, c: color, fs: +fs.toFixed(3), w: wFrac, p: pts.map(([x, y]) => [+(x - (r.left - cr.left) / inkZ).toFixed(2), +(y - (r.top - cr.top) / inkZ).toFixed(2)]) };
   };
   const eraseAt = async (x, y, cr) => {
     const o = liveOvForWrite();
@@ -3453,11 +3477,11 @@ function recognizeShape(pts, force) {
     try { cv.setPointerCapture(e.pointerId); } catch {}
     if (e.pointerType === 'touch') {
       touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (touches.size >= 2) { tch = null; pinch = { d0: pinchDist() || 1, f0: curFs(), ratio: 1 }; touchId = null; return; } // 2本目の指: ピンチ
+      if (touches.size >= 2) { tch = null; pinch = { d0: pinchDist() || 1, z0: inkZ, tx0: inkTx, sT0: $('#score').scrollTop, c: pinchCenter(), ratio: 1 }; touchId = null; return; } // 2本目の指: ピンチ
       touchId = e.pointerId; touchStart(e); return; // 指は、画面のスクロール(ペンだけが、書く)
     }
     const cr = cv.getBoundingClientRect();
-    const x = e.clientX - cr.left, y = e.clientY - cr.top;
+    const x = (e.clientX - cr.left) / inkZ, y = (e.clientY - cr.top) / inkZ;
     if (liveTool === 'erase') { drawing = { erase: true, cr }; eraseAt(x, y, cr); return; }
     if (liveTool === 'lasso') {
       const bb = strokeBBox(selectedCanvas().map((q) => q.pts));
@@ -3473,7 +3497,7 @@ function recognizeShape(pts, force) {
     if (!cv) return;
     if (e.pointerType === 'touch' && touches.has(e.pointerId)) {
       touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (pinch && touches.size >= 2) { pinch.ratio = pinchDist() / pinch.d0; if (!pinchRaf) pinchRaf = setTimeout(pinchApply, 30); return; }
+      if (pinch && touches.size >= 2) { pinch.ratio = pinchDist() / pinch.d0; if (!pinchRaf) pinchRaf = setTimeout(pinchApply, 24); return; }
     }
     if (touchId === e.pointerId && e.pointerType === 'touch') { const list = e.getCoalescedEvents ? e.getCoalescedEvents() : []; touchMove(list.length ? list[list.length - 1] : e); return; }
     if (!drawing) return;
@@ -3482,7 +3506,7 @@ function recognizeShape(pts, force) {
     const list = evs.length ? evs : [e];
     const ctx = cv._ctx;
     for (const ev of list) {
-      const x = ev.clientX - cr.left, y = ev.clientY - cr.top;
+      const x = (ev.clientX - cr.left) / inkZ, y = (ev.clientY - cr.top) / inkZ;
       if (drawing.erase) { eraseAt(x, y, cr); continue; }
       if (drawing.move) { lassoDrag = { dx: x - drawing.x0, dy: y - drawing.y0 }; queueInk(); continue; }
       if (drawing.lasso) { lassoPath.push([x, y]); queueInk(); continue; }
@@ -3543,7 +3567,7 @@ function recognizeShape(pts, force) {
     const r = d.rect, cr = d.cr; // 書き始めた時点の、行の位置を基準にする(スクロール中に書いても、ずれない)
     o.ink = [...(o.ink || []), {
       id: inkId(), v: 2, b: d.b, c: inkPref.color, fs: +fs.toFixed(3), w: +(inkPref.width / fs).toFixed(4),
-      p: pts.map(([x, y]) => [+(x - (r.left - cr.left)).toFixed(2), +(y - (r.top - cr.top)).toFixed(2)]), // 行の左上からの距離(px)
+      p: pts.map(([x, y]) => [+(x - (r.left - cr.left) / inkZ).toFixed(2), +(y - (r.top - cr.top) / inkZ).toFixed(2)]), // 行の左上からの距離(px)
     }];
     queueInk(); // 先に、画面を更新してから、保存する(保存を待たずに、線が整う)
     await saveLive(o);
@@ -3604,6 +3628,7 @@ function setLiveTool(t) {
   $('#score').classList.toggle('live-skip', liveTool === 'skipLine' || liveTool === 'skipBar');
   $('#score').classList.toggle('live-ink', inkToolOn());
   $('#lvLasso').classList.toggle('hidden', liveTool !== 'lasso');
+  if (!inkToolOn()) resetInkZoom();
   $('#liveBar').classList.toggle('lassoMode', liveTool === 'lasso'); // 投げ縄のときは、ペンの設定を隠して、横1列に収める
   if (liveTool !== 'lasso') { lassoSel = new Set(); lassoPath = null; lassoDrag = null; queueInk(); }
   if (liveTool === 'erase') toast('消しゴムモード: ペンでなぞった線を消します');
@@ -3665,9 +3690,12 @@ function openChordEdit(i, k) {
   if (!seg) return;
   if (!ln.bracket || ln.src == null || seg.inherited) return toast('この形式のコードは、ここでは直せません。「コード編集」で直してください');
   const nth = chordSegs.slice(0, k).filter((g) => !g.inherited).length; // この行の、元のテキストの中で、何番目のコードか
-  chordEditCtx = { src: ln.src, nth, orig: seg.chord };
-  $('#ceInput').value = seg.chord;
-  $('#ceWhere').textContent = `元のコード: ${seg.chord}`;
+  const shown = disp(seg.chord); // 画面に出ている(移調・表記の設定を反映した)コードのまま、編集する
+  chordEditCtx = { src: ln.src, nth, orig: seg.chord, shown, tr: effTranspose() };
+  $('#ceInput').value = shown;
+  $('#ceWhere').textContent = effTranspose() || (cur.accidental || 'auto') !== 'auto'
+    ? `いまの表示のキーで、直せます(原曲のキーのテキストには、自動で直して、反映します)。表示中: ${shown} / 原曲のキー: ${seg.chord}`
+    : `元のコード: ${seg.chord}`;
   const q = $('#ceQuick');
   q.textContent = '';
   ['m', '7', 'm7', 'M7', 'sus4', 'add9', 'dim', 'aug', '/'].forEach((t) => {
@@ -3690,9 +3718,17 @@ function chordTokenRange(lineText, nth) { // 行の中の、nth 番目の「コ�
   }
   return null;
 }
-async function applyChordEdit(newChord) {
+// 画面のキーで入力したコードを、原曲のキーに直す(元のコードの ♯/♭ の書き方に合わせる)
+function toOriginalKey(chord, c) {
+  if (!c.tr) return chord; // 移調していなければ、入力したまま(♯/♭ の表記設定だけのときも、入力したまま)
+  const o = c.orig;
+  const pref = /^[A-G][b♭]/.test(o) ? 'flat' : /^[A-G][#♯]/.test(o) ? 'sharp' : (/[b♭]/.test(cur.key || '') ? 'flat' : 'sharp');
+  return transposeChord(chord, -c.tr, pref);
+}
+async function applyChordEdit(newChordShown) {
   const c = chordEditCtx;
   if (!c) return;
+  const newChord = newChordShown ? toOriginalKey(newChordShown, c) : '';
   const lines = cur.raw.replace(/\r/g, '').split('\n');
   const r = chordTokenRange(lines[c.src] || '', c.nth);
   if (!r) return toast('元のテキストの、コードの位置が見つかりませんでした。「コード編集」で直してください');
@@ -3705,7 +3741,7 @@ async function applyChordEdit(newChord) {
   await openSong(cur.id, playCtx);
   if (wasAuto) setMode(true);
   setPos(keep, { scroll: false });
-  toast(newChord ? 'コードを直しました: ' + c.orig + ' → ' + newChord : 'コードを消しました');
+  toast(newChord ? 'コードを直しました: ' + c.shown + ' → ' + newChordShown + (newChord !== newChordShown ? '(原曲のキーでは ' + newChord + ')' : '') : 'コードを消しました');
 }
 $('#ceSave').onclick = () => {
   const v = $('#ceInput').value.trim().replace(/^\[|\]$/g, '');
