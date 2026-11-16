@@ -780,3 +780,28 @@ dialog.wide { width: min(900px, 96vw); }
 #liveBar #lvStraight.on { background: var(--accent); color: var(--accent-fg); font-weight: 700; }
 #liveBar #lvAdapt.on { background: var(--accent); color: var(--accent-fg); font-weight: 700; }
 #liveBar #lvLasso { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; } #liveBar #lvLasso.hidden { display: none; } #liveBar #lvLasso .hint { font-size: 12px; margin: 0; }
+
+/* ---- ライブ編集のパネル: 横1列に収める(アイコン中心の、小さなボタン) ---- */
+#liveBar { flex-wrap: nowrap !important; overflow-x: auto; overflow-y: hidden; gap: 4px !important; padding: 5px 8px !important; border-radius: 14px; scrollbar-width: none; align-items: center; }
+#liveBar::-webkit-scrollbar { display: none; }
+#liveBar > *, #liveBar .lvsw, #liveBar .lvwd, #liveBar #lvLasso { flex: none; }
+#liveBar button { min-height: 36px !important; min-width: 36px; padding: 0 !important; display: inline-flex; align-items: center; justify-content: center; border-radius: 10px; position: relative; }
+#liveBar button svg { pointer-events: none; }
+#liveBar button.on { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
+#liveBar button:disabled { opacity: .35; }
+#liveBar .lvsep { width: 1px; height: 24px; margin: 0 3px !important; }
+#liveBar .lvsw { gap: 3px !important; }
+#liveBar .lvsw button { width: 26px !important; height: 26px !important; min-width: 26px !important; min-height: 26px !important; border-width: 2px; }
+#liveBar .lvsw input[type=color] { width: 28px; height: 28px; border-width: 2px; padding: 1px; }
+#liveBar .lvwd { gap: 5px; padding: 0 2px; }
+#liveBar .lvwd input[type=range] { width: 84px; }
+#liveBar #lvWidthV { min-width: 2.6em; font-size: 11px; }
+#liveBar #lvLasso { display: inline-flex; align-items: center; gap: 4px; }
+#liveBar #lvLasso.hidden { display: none !important; }
+#liveBar #lvRestore[data-n]:not([data-n=""])::after { content: attr(data-n); position: absolute; right: -3px; top: -4px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px; background: #ef4444; color: #fff; font-size: 10px; font-weight: 800; line-height: 15px; text-align: center; }
+#liveBar .lvx { position: absolute; right: 2px; bottom: 0; font-size: 9px; color: var(--dim); }
+#penDiag { position: fixed; left: 10px; right: 10px; bottom: 90px; z-index: 99; padding: 8px 12px; border-radius: 10px; background: #000c; color: #fff; font: 12px/1.4 ui-monospace, Menlo, monospace; pointer-events: none; }
+#penDiag[hidden] { display: none; }
+#liveBar .lvwd input[type=range] { width: 64px; }
+#liveBar #lvWidthV { display: none; }
+#liveBar .lvsw button, #liveBar .lvsw input[type=color] { width: 24px !important; height: 24px !important; min-width: 24px !important; min-height: 24px !important; }

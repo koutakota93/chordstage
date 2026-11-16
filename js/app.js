@@ -3069,18 +3069,27 @@ updateInstallUi();
 // 内容は、セットリストの、その曲の設定(overrides)に入る(曲本体は変わらない。同期の対象)
 let liveTool = null;           // 'pen' | 'erase' | 'skipLine' | 'skipBar' | null
 // ペンの設定(色・太さ・直線補正)は、端末に覚える
-const inkPref = (() => { try { return { color: 'fg', width: 3.5, straight: false, adapt: true, ...JSON.parse(localStorage.getItem('cs.ink') || '{}') }; } catch { return { color: 'fg', width: 3.5, straight: false, adapt: true }; } })();
+const inkPref = (() => { try { return (() => { const j = JSON.parse(localStorage.getItem('cs.ink') || '{}'); return { color: 'fg', width: 3.5, shape: !!j.straight, ...j, adapt: true }; })(); } catch { return { color: 'fg', width: 3.5, shape: false, adapt: true }; } })();
 const saveInkPref = () => { try { localStorage.setItem('cs.ink', JSON.stringify(inkPref)); } catch {} };
 const INK_COLORS = { fg: null, red: '#ef4444', blue: '#3b82f6', green: '#22c55e' };
-async function saveLive(o) {
+// すべての操作(手書き・省略など)を、1個ずつ戻せるように、変える前の状態(その曲の設定)を、覚えておく
+let liveUndo = { id: null, stack: [] };
+async function saveLive(o, { noUndo = false } = {}) {
   const set = playSet();
   if (!set) return;
+  if (!noUndo) {
+    if (liveUndo.id !== cur.id) liveUndo = { id: cur.id, stack: [] };
+    liveUndo.stack.push(JSON.stringify(playOv() || {}));
+    if (liveUndo.stack.length > 60) liveUndo.stack.shift();
+  }
   set.overrides = set.overrides || {};
   set.overrides[cur.id] = o;
   await saveSet(set);
   applySkipClasses();
   queueInk();
+  updateUndoBtn();
 }
+function updateUndoBtn() { const n = liveUndo.id === (cur && cur.id) ? liveUndo.stack.length : 0; $('#lvUndo').disabled = !n; }
 const liveOvForWrite = () => { const set = playSet(); return set ? { ...(playOv() || {}) } : null; };
 
 function applySkipClasses() {
@@ -3090,7 +3099,7 @@ function applySkipClasses() {
     b.el.querySelectorAll('.cell').forEach((c, ci) => c.classList.toggle('skipbar', sk.bars.has(i + ':' + ci)));
   });
   const n = sk.lines.size + sk.bars.size;
-  $('#lvRestore').textContent = n ? `省略をすべて復元(${n})` : '省略をすべて復元';
+  $('#lvRestore').dataset.n = n || '';
   $('#lvRestore').disabled = !n;
 }
 async function liveSkipTap(e) {
@@ -3119,6 +3128,8 @@ async function liveSkipTap(e) {
 $('#lvRestore').onclick = async () => {
   const o = liveOvForWrite();
   if (!o) return;
+  const n = skipSets();
+  if (!confirm(`省略した ${n.lines.size}行・${n.bars.size}小節を、すべて復元します。よろしいですか?\n(あとで、「1個戻す」で、省略に戻せます)`)) return;
   o.skipLines = []; o.skipBars = [];
   await saveLive(o);
   setPos(pos, { scroll: false });
@@ -3263,7 +3274,7 @@ function redrawInk() {
   const o = playOv();
   const cr = cv.getBoundingClientRect(), rects = new Map();
   const fs = curFs();
-  if (o && o.ink && o.ink.length && migrateInk(o, cr, fs)) saveLive({ ...o });
+  if (o && o.ink && o.ink.length && migrateInk(o, cr, fs)) saveLive({ ...o }, { noUndo: true });
   const bg = inkPref.adapt ? hlColor() : null;
   const sel = [];
   ((o && o.ink) || []).forEach((st) => {
@@ -3295,9 +3306,21 @@ function blockAtY(y, cr) { // キャンバス上のy座標に、いちばん近�
   });
   return best;
 }
-// 直線補正: ほぼ直線の線は、直線にする。水平・垂直に近ければ、ぴったり水平・垂直にする
-function straighten(pts, force) {
-  if (pts.length < 2) return pts;
+// 図形補正: 書いた線を、きれいな図形にする(直線・四角形・三角形・円)。ほぼ直線なら直線(水平・垂直に近ければ、ぴったり水平・垂直)、
+// 閉じた線なら、角の数で、三角形・四角形、丸ければ円(楕円)にする。当てはまらない線は、そのまま
+function dpSimplify(pts, eps) { // Douglas-Peucker
+  if (pts.length < 3) return pts;
+  const a = pts[0], z = pts[pts.length - 1];
+  const L = Math.hypot(z[0] - a[0], z[1] - a[1]) || 1;
+  let dmax = 0, idx = 0;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const d = Math.abs((z[0] - a[0]) * (a[1] - pts[i][1]) - (a[0] - pts[i][0]) * (z[1] - a[1])) / L;
+    if (d > dmax) { dmax = d; idx = i; }
+  }
+  if (dmax <= eps) return [a, z];
+  return [...dpSimplify(pts.slice(0, idx + 1), eps).slice(0, -1), ...dpSimplify(pts.slice(idx), eps)];
+}
+function straightLine(pts, force) {
   const a = pts[0], z = pts[pts.length - 1];
   const L = Math.hypot(z[0] - a[0], z[1] - a[1]);
   if (L < 12) return pts;
@@ -3311,6 +3334,50 @@ function straighten(pts, force) {
   const near = (t) => Math.abs(((ang - t + 540) % 360) - 180) < 7;
   if (near(0) || near(180)) e = [z[0], a[1]]; else if (near(90) || near(-90)) e = [a[0], z[1]];
   return [a, e];
+}
+function recognizeShape(pts, force) {
+  if (pts.length < 2) return pts;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, path = 0;
+  pts.forEach(([x, y], i) => { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); if (i) path += Math.hypot(x - pts[i - 1][0], y - pts[i - 1][1]); });
+  const w = x1 - x0, h = y1 - y0, diag = Math.hypot(w, h), big = Math.max(w, h);
+  const a = pts[0], z = pts[pts.length - 1];
+  const closed = pts.length > 8 && Math.hypot(z[0] - a[0], z[1] - a[1]) <= 0.3 * big + 6 && path > 1.7 * big;
+  if (!closed) return straightLine(pts, force);
+  const loop = [...pts, a];
+  // 閉じた線は、始点からいちばん遠い点で、2つに分けて、それぞれ単純化する(始点と終点が同じだと、そのまま計算できない)
+  let m = 0, md = 0;
+  loop.forEach(([x, y], i) => { const d = Math.hypot(x - a[0], y - a[1]); if (d > md) { md = d; m = i; } });
+  const eps = Math.max(6, 0.07 * diag);
+  const left = dpSimplify(loop.slice(0, m + 1), eps), right = dpSimplify(loop.slice(m), eps);
+  const dp = [...left.slice(0, -1), ...right]; // 最後は、始点に戻る
+  const k = dp.length - 1; // 角の数
+  let area = 0;
+  for (let i = 0; i < loop.length - 1; i++) area += loop[i][0] * loop[i + 1][1] - loop[i + 1][0] * loop[i][1];
+  area = Math.abs(area) / 2;
+  const per = path + Math.hypot(z[0] - a[0], z[1] - a[1]);
+  const circ = 4 * Math.PI * area / (per * per);
+  const fill = area / Math.max(1, w * h); // 外側の長方形に対する、囲んだ面積の割合(長方形 ≒ 1、円 ≒ 0.79、三角形 ≒ 0.5)
+  const axisRect = [[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]];
+  if (k === 3) return [...dp.slice(0, 3), dp[0]]; // 三角形
+  if (fill >= 0.86) return axisRect; // 長方形
+  if (k === 4) return dp; // 斜めの四角形
+  if (fill < 0.64) { // 三角形: 囲んだ点の中で、いちばん面積が大きい3点
+    let best = null, ba = 0;
+    const step = Math.max(1, Math.floor(pts.length / 36));
+    const c = pts.filter((_, i) => i % step === 0);
+    for (let i = 0; i < c.length; i++) for (let j = i + 1; j < c.length; j++) for (let l = j + 1; l < c.length; l++) {
+      const ar = Math.abs((c[j][0] - c[i][0]) * (c[l][1] - c[i][1]) - (c[l][0] - c[i][0]) * (c[j][1] - c[i][1])) / 2;
+      if (ar > ba) { ba = ar; best = [c[i], c[j], c[l]]; }
+    }
+    if (best && ba > 0.7 * area) return [...best, best[0]];
+  }
+  if (circ > 0.68 && fill > 0.66) { // 円(楕円)
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    let rx = w / 2, ry = h / 2;
+    if (Math.abs(rx - ry) / Math.max(rx, ry) < 0.16) rx = ry = (rx + ry) / 2;
+    return Array.from({ length: 49 }, (_, i) => [cx + rx * Math.cos(i / 48 * 2 * Math.PI), cy + ry * Math.sin(i / 48 * 2 * Math.PI)]);
+  }
+  return pts;
 }
 (() => {
   let drawing = null, touchId = null, holdTimer = 0, flingRaf = 0;
@@ -3362,7 +3429,7 @@ function straighten(pts, force) {
   const preview = () => { // 直線補正: 止めたままにすると、直線に切り替わる(動かすと、直線の向きが変わる)
     const ctx = sizeInk();
     redrawInk();
-    inkFull(ctx, straighten(drawing.pts, true), color(), inkPref.width);
+    inkFull(ctx, recognizeShape(drawing.pts, true), color(), inkPref.width);
   };
   const selectedCanvas = () => { // 選んだ線の、いまのキャンバス上の座標
     const cv = inkCv(), o = playOv();
@@ -3371,7 +3438,27 @@ function straighten(pts, force) {
     return (o.ink || []).filter((st) => lassoSel.has(st.id)).map((st) => ({ st, pts: inkToCanvas(st, cr, rects, fsNow) })).filter((x) => x.pts);
   };
   // ペンのボタンを押している間だけ、消しゴム(ボタンを離すと、ペンに戻る)
-  const eraserHeld = (e) => (e.buttons & 34) !== 0; // 2: ペンの横のボタン(S Penのボタン)/ 右クリック、32: ペンの消しゴム側
+  // Galaxy Tab S8 世代のSペンは、横のボタンを、ペンの「バレルボタン」(buttons の 2)として伝えるが、機種やChromeの版で、
+  // 32(消しゴム側)・button の 2 / 5 で届くこともある。ボタンを、ペンが浮いている間(ホバー)に押す場合もあるので、
+  // ペンのすべての動きから、ボタンの状態を覚えておき、どれか1つでも押されていれば、消しゴムにする
+  let penButtons = 0;
+  const trackPen = (e) => { if (e.pointerType === 'pen' || e.pointerType === 'mouse') { penButtons = e.type === 'pointerup' || e.type === 'pointercancel' ? 0 : e.buttons; } if (diagUntil > Date.now()) showDiag(e); };
+  ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'pointerrawupdate', 'pointerover', 'pointerenter'].forEach((t) => document.addEventListener(t, trackPen, true));
+  document.addEventListener('contextmenu', (e) => { if (e.target === inkCv() && (liveTool === 'pen' || liveTool === 'lasso')) e.preventDefault(); }); // ボタンを押したときの、メニューを出さない
+  const eraserHeld = (e) => (((e.buttons | ((e.pointerType === 'pen' || e.pointerType === 'mouse') ? penButtons : 0)) & 34) !== 0) || e.button === 2 || e.button === 5;
+  let diagUntil = 0;
+  const showDiag = (e) => {
+    if (e.pointerType !== 'pen' && e.pointerType !== 'mouse') return;
+    let d = document.getElementById('penDiag');
+    if (!d) { d = el('div'); d.id = 'penDiag'; document.body.append(d); }
+    d.textContent = `ペン: ${e.type} / ${e.pointerType} / buttons=${e.buttons} button=${e.button} / 筆圧=${(e.pressure || 0).toFixed(2)} / 消しゴム判定=${eraserHeld(e) ? 'オン' : 'オフ'}`;
+    d.hidden = false;
+  };
+  $('#lvDiag').onclick = () => {
+    diagUntil = Date.now() + 25000;
+    toast('ペンの確認: 25秒間、画面の下に、ペンの信号を表示します。ペンのボタンを押して、「消しゴム判定」が変わるか見てください');
+    setTimeout(() => { const d = document.getElementById('penDiag'); if (d && diagUntil <= Date.now()) d.hidden = true; }, 25500);
+  };
   const startPen = (x, y, cr) => {
     drawing = { pts: [[x, y]], cr, snapped: false };
     const blkIdx = blockAtY(y, cr);
@@ -3426,7 +3513,7 @@ function straighten(pts, force) {
       if (drawing.snapped) continue;
       inkLive(ctx, drawing.pts);
     }
-    if (drawing.erase || drawing.move || drawing.lasso || !inkPref.straight) return;
+    if (drawing.erase || drawing.move || drawing.lasso || !inkPref.shape) return;
     clearTimeout(holdTimer);
     if (drawing.snapped) { preview(); }
     holdTimer = setTimeout(() => { if (drawing && drawing.pts) { drawing.snapped = true; preview(); } }, 500);
@@ -3466,7 +3553,7 @@ function straighten(pts, force) {
     }
     if (!d.pts) return;
     let pts = d.pts;
-    if (inkPref.straight) pts = straighten(pts, d.snapped);
+    if (inkPref.shape) pts = recognizeShape(pts, d.snapped);
     const fs = curFs();
     const o = liveOvForWrite();
     if (!o) return;
@@ -3509,7 +3596,14 @@ function straighten(pts, force) {
   };
   $('#lvSelClear').onclick = () => { lassoSel = new Set(); queueInk(); };
 })();
-$('#lvUndo').onclick = async () => { const o = liveOvForWrite(); if (!o || !(o.ink || []).length) return; o.ink = o.ink.slice(0, -1); await saveLive(o); };
+$('#lvUndo').onclick = async () => {
+  if (liveUndo.id !== cur.id || !liveUndo.stack.length) return;
+  const snap = JSON.parse(liveUndo.stack.pop());
+  lassoSel = new Set();
+  const keep = pos;
+  await saveLive(snap, { noUndo: true });
+  setPos(lineSkipped(keep) ? Math.max(0, activeAfter(keep)) : keep, { scroll: false });
+};
 $('#lvClear').onclick = async () => {
   const o = liveOvForWrite();
   if (!o || !(o.ink || []).length) return toast('手書きは、まだありません');
@@ -3541,16 +3635,14 @@ const syncInkUi = () => {
   $('#lvWidthV').textContent = inkPref.width + 'px';
   $('#lvDot').style.setProperty('--w', inkPref.width + 'px');
   $('#lvDot').style.background = inkColorOf(inkPref.color);
-  $('#lvStraight').classList.toggle('on', inkPref.straight);
-  $('#lvAdapt').classList.toggle('on', inkPref.adapt);
+  $('#lvShape').classList.toggle('on', inkPref.shape);
 };
 document.querySelectorAll('#liveBar [data-ink]').forEach((b) => {
   b.onclick = () => { inkPref.color = b.dataset.ink; saveInkPref(); syncInkUi(); if (liveTool !== 'pen') setLiveTool('pen'); };
 });
 $('#lvColor').oninput = () => { inkPref.color = $('#lvColor').value; saveInkPref(); syncInkUi(); if (liveTool !== 'pen') setLiveTool('pen'); };
 $('#lvWidth').oninput = () => { inkPref.width = Number($('#lvWidth').value); saveInkPref(); syncInkUi(); };
-$('#lvAdapt').onclick = () => { inkPref.adapt = !inkPref.adapt; saveInkPref(); syncInkUi(); queueInk(); toast(inkPref.adapt ? 'ハイライトに重なった線は、見やすい色にします' : 'ハイライトでも、選んだ色のままにします'); };
-$('#lvStraight').onclick = () => { inkPref.straight = !inkPref.straight; saveInkPref(); syncInkUi(); toast(inkPref.straight ? '直線補正: オン(ほぼ直線の線は直線に。書いたまま止めると、直線になります)' : '直線補正: オフ'); };
+$('#lvShape').onclick = () => { inkPref.shape = !inkPref.shape; saveInkPref(); syncInkUi(); toast(inkPref.shape ? '図形補正: オン(直線・四角形・三角形・円を、きれいな図形に。書いたまま止めても、図形になります)' : '図形補正: オフ'); };
 syncInkUi();
 function closeLive() { if (liveTool) setLiveTool(liveTool); $('#liveBar').classList.add('hidden'); $('#btnLive').classList.remove('on'); }
 $('#btnLive').onclick = () => {
