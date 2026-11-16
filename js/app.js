@@ -3066,10 +3066,10 @@ updateInstallUi();
 // セットリストから開いた曲に、そのライブだけの編集を入れる: Sペンの手書き / 行・小節の省略(復元もできる)。
 // 内容は、セットリストの、その曲の設定(overrides)に入る(曲本体は変わらない。同期の対象)
 let liveTool = null;           // 'pen' | 'erase' | 'skipLine' | 'skipBar' | null
-let inkColor = 'fg';
-let inkSize = 2;               // 1〜3(太さ)
+// ペンの設定(色・太さ・直線補正)は、端末に覚える
+const inkPref = (() => { try { return { color: 'fg', width: 3.5, straight: false, ...JSON.parse(localStorage.getItem('cs.ink') || '{}') }; } catch { return { color: 'fg', width: 3.5, straight: false }; } })();
+const saveInkPref = () => { try { localStorage.setItem('cs.ink', JSON.stringify(inkPref)); } catch {} };
 const INK_COLORS = { fg: null, red: '#ef4444', blue: '#3b82f6', green: '#22c55e' };
-const inkPx = () => [0, 2, 3.5, 6][inkSize];
 async function saveLive(o) {
   const set = playSet();
   if (!set) return;
@@ -3124,62 +3124,85 @@ $('#lvRestore').onclick = async () => {
 };
 
 // ---- 手書き ----
+// 描く場所(キャンバス)は、譜面の表示範囲と同じ大きさの1枚(スクロールしても、同じ場所に置き、スクロールのたびに描き直す)。
+// 大きな譜面全体に描くより、ずっと軽いので、ペンの動きに、すぐ付いてくる
 let inkQueued = 0;
 function queueInk() { if (inkQueued) return; inkQueued = requestAnimationFrame(() => { inkQueued = 0; redrawInk(); }); }
-function inkCv() { return document.getElementById('inkCv'); }
+const inkCv = () => document.getElementById('inkCv');
 function setupInk() {
-  const score = $('#score');
+  const stage = document.querySelector('.stage');
   let cv = inkCv();
-  if (!cv) { cv = el('canvas'); cv.id = 'inkCv'; }
-  score.append(cv); // renderScore が、譜面を作り直すので、そのたびに付け直す
+  if (!cv) {
+    cv = el('canvas'); cv.id = 'inkCv';
+    stage.append(cv);
+    $('#score').addEventListener('scroll', queueInk, { passive: true });
+    window.addEventListener('resize', queueInk);
+  }
   cv.classList.toggle('on', liveTool === 'pen' || liveTool === 'erase');
   queueInk();
 }
 function sizeInk() {
   const cv = inkCv(), score = $('#score');
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const w = score.scrollWidth, h = score.scrollHeight;
+  const w = score.clientWidth, h = score.clientHeight;
   if (cv._w !== w || cv._h !== h || cv._d !== dpr) {
     cv.style.width = w + 'px'; cv.style.height = h + 'px';
     cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
     cv._w = w; cv._h = h; cv._d = dpr;
+    cv._ctx = cv.getContext('2d', { desynchronized: true }); // 遅れを減らす(対応している端末で、画面への反映を早める)
   }
-  return dpr;
+  cv._ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return cv._ctx;
 }
-const inkStroke = (ctx, pts, color, w) => {
-  ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = w; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+const inkColorOf = (c) => (c && c[0] === '#' ? c : INK_COLORS[c] || getComputedStyle(document.documentElement).getPropertyValue('--fg').trim() || '#fff');
+const mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+function inkStyle(ctx, color, w) { ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = w; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; }
+function inkFull(ctx, pts, color, w) { // 1本の線を、まとめて描く
+  inkStyle(ctx, color, w);
   if (pts.length === 1) { ctx.beginPath(); ctx.arc(pts[0][0], pts[0][1], w / 2, 0, Math.PI * 2); ctx.fill(); return; }
   ctx.beginPath();
   ctx.moveTo(pts[0][0], pts[0][1]);
-  for (let k = 1; k < pts.length - 1; k++) { const mx = (pts[k][0] + pts[k + 1][0]) / 2, my = (pts[k][1] + pts[k + 1][1]) / 2; ctx.quadraticCurveTo(pts[k][0], pts[k][1], mx, my); }
-  const l = pts[pts.length - 1];
-  ctx.lineTo(l[0], l[1]);
+  if (pts.length === 2) ctx.lineTo(pts[1][0], pts[1][1]);
+  else {
+    for (let k = 1; k < pts.length - 1; k++) { const m = mid(pts[k], pts[k + 1]); ctx.quadraticCurveTo(pts[k][0], pts[k][1], m[0], m[1]); }
+    ctx.lineTo(pts[pts.length - 1][0], pts[pts.length - 1][1]);
+  }
   ctx.stroke();
-};
-const inkColorOf = (c) => (c === 'fg' || !INK_COLORS[c] ? getComputedStyle(document.documentElement).getPropertyValue('--fg').trim() || '#fff' : INK_COLORS[c]);
+}
+function inkLive(ctx, pts) { // 書いている最中は、最後の1区間だけを足して描く(描き直さないので、速い)
+  const n = pts.length;
+  if (n < 2) return;
+  ctx.beginPath();
+  if (n === 2) { const m = mid(pts[0], pts[1]); ctx.moveTo(pts[0][0], pts[0][1]); ctx.lineTo(m[0], m[1]); }
+  else { const a = mid(pts[n - 3], pts[n - 2]), b = mid(pts[n - 2], pts[n - 1]); ctx.moveTo(a[0], a[1]); ctx.quadraticCurveTo(pts[n - 2][0], pts[n - 2][1], b[0], b[1]); }
+  ctx.stroke();
+}
 // 保存した線(行ごとの、相対位置)を、いまの画面の位置・大きさに合わせて、キャンバス上の座標にする
-function inkToCanvas(st) {
-  const cv = inkCv(), blk = blocks[st.b];
-  if (!cv || !blk) return null;
-  const r = blk.el.getBoundingClientRect(), cr = cv.getBoundingClientRect();
+function inkToCanvas(st, cr, rects) {
+  const blk = blocks[st.b];
+  if (!blk) return null;
+  let r = rects && rects.get(st.b);
+  if (!r) { r = blk.el.getBoundingClientRect(); if (rects) rects.set(st.b, r); }
   return st.p.map(([x, y]) => [r.left - cr.left + x * r.width, r.top - cr.top + y * r.height]);
 }
 function redrawInk() {
   const cv = inkCv();
   if (!cv || !cur) return;
-  const dpr = sizeInk();
-  const ctx = cv.getContext('2d');
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const ctx = sizeInk();
   ctx.clearRect(0, 0, cv._w, cv._h);
   const o = playOv();
+  if (!o || !o.ink || !o.ink.length) return;
+  const cr = cv.getBoundingClientRect(), rects = new Map();
   const fs = parseFloat(getComputedStyle($('#score')).fontSize) || 30;
-  ((o && o.ink) || []).forEach((st) => {
-    const pts = inkToCanvas(st);
-    if (pts && pts.length) inkStroke(ctx, pts, inkColorOf(st.c), Math.max(1.2, st.w * fs));
+  o.ink.forEach((st) => {
+    const pts = inkToCanvas(st, cr, rects);
+    if (!pts || !pts.length) return;
+    const ys = pts.map((q) => q[1]);
+    if (Math.max(...ys) < -20 || Math.min(...ys) > cv._h + 20) return; // 画面の外の線は、描かない
+    inkFull(ctx, pts, inkColorOf(st.c), Math.max(1.2, st.w * fs));
   });
 }
-function blockAtY(y) { // キャンバス上のy座標に、いちばん近い行
-  const cr = inkCv().getBoundingClientRect();
+function blockAtY(y, cr) { // キャンバス上のy座標に、いちばん近い行
   let best = 0, bd = Infinity;
   blocks.forEach((b, i) => {
     const r = b.el.getBoundingClientRect();
@@ -3189,17 +3212,38 @@ function blockAtY(y) { // キャンバス上のy座標に、いちばん近い�
   });
   return best;
 }
+// 直線補正: ほぼ直線の線は、直線にする。水平・垂直に近ければ、ぴったり水平・垂直にする
+function straighten(pts, force) {
+  if (pts.length < 2) return pts;
+  const a = pts[0], z = pts[pts.length - 1];
+  const L = Math.hypot(z[0] - a[0], z[1] - a[1]);
+  if (L < 12) return pts;
+  if (!force) {
+    let dmax = 0;
+    for (const p of pts) dmax = Math.max(dmax, Math.abs((z[0] - a[0]) * (a[1] - p[1]) - (a[0] - p[0]) * (z[1] - a[1])) / L);
+    if (dmax > Math.max(5, L * 0.09)) return pts; // 曲がっている線は、そのまま
+  }
+  let e = z;
+  const ang = Math.atan2(z[1] - a[1], z[0] - a[0]) * 180 / Math.PI;
+  const near = (t) => Math.abs(((ang - t + 540) % 360) - 180) < 7;
+  if (near(0) || near(180)) e = [z[0], a[1]]; else if (near(90) || near(-90)) e = [a[0], z[1]];
+  return [a, e];
+}
 (() => {
-  let drawing = null, touchY = 0, touchId = null, erasing = false;
-  const local = (e) => { const r = inkCv().getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
-  const eraseAt = async (x, y) => {
+  let drawing = null, touchY = 0, touchId = null, holdTimer = 0;
+  const color = () => inkColorOf(inkPref.color);
+  const eraseAt = async (x, y, cr) => {
     const o = liveOvForWrite();
     if (!o || !o.ink || !o.ink.length) return;
-    const keep = o.ink.filter((st) => {
-      const pts = inkToCanvas(st);
-      return !(pts && pts.some(([px, py]) => Math.hypot(px - x, py - y) < 16));
-    });
+    const rects = new Map();
+    const keep = o.ink.filter((st) => { const pts = inkToCanvas(st, cr, rects); return !(pts && pts.some(([px, py]) => Math.hypot(px - x, py - y) < 16)); });
     if (keep.length !== o.ink.length) { o.ink = keep; await saveLive(o); }
+  };
+  const preview = () => { // 直線補正: 止めたままにすると、直線に切り替わる(動かすと、直線の向きが変わる)
+    const cv = inkCv(), ctx = sizeInk();
+    redrawInk();
+    const pts = straighten(drawing.pts, true);
+    inkFull(ctx, pts, color(), inkPref.width);
   };
   document.addEventListener('pointerdown', (e) => {
     const cv = inkCv();
@@ -3207,44 +3251,56 @@ function blockAtY(y) { // キャンバス上のy座標に、いちばん近い�
     e.preventDefault();
     try { cv.setPointerCapture(e.pointerId); } catch {}
     if (e.pointerType === 'touch') { touchY = e.clientY; touchId = e.pointerId; return; } // 指は、画面のスクロール(ペンだけが、書く)
-    erasing = liveTool === 'erase' || (e.buttons & 32) !== 0; // Sペンの消しゴム(ボタン)でも消せる
-    const [x, y] = local(e);
-    if (erasing) { drawing = { erase: true }; eraseAt(x, y); return; }
-    drawing = { pts: [[x, y]] };
-    const ctx = cv.getContext('2d'); const dpr = cv._d || 1; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    inkStroke(ctx, drawing.pts, inkColorOf(inkColor), inkPx());
+    const cr = cv.getBoundingClientRect();
+    const x = e.clientX - cr.left, y = e.clientY - cr.top;
+    if (liveTool === 'erase' || (e.buttons & 32) !== 0) { drawing = { erase: true, cr }; eraseAt(x, y, cr); return; } // Sペンの消しゴムボタンでも消せる
+    drawing = { pts: [[x, y]], cr, snapped: false };
+    const ctx = sizeInk();
+    inkStyle(ctx, color(), inkPref.width);
+    ctx.beginPath(); ctx.arc(x, y, inkPref.width / 2, 0, Math.PI * 2); ctx.fill();
   }, { passive: false });
   document.addEventListener('pointermove', (e) => {
     const cv = inkCv();
     if (!cv) return;
     if (touchId === e.pointerId && e.pointerType === 'touch') { $('#score').scrollTop -= e.clientY - touchY; touchY = e.clientY; return; }
     if (!drawing) return;
-    const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
-    for (const ev of (evs.length ? evs : [e])) {
-      const [x, y] = local(ev);
-      if (drawing.erase) { eraseAt(x, y); continue; }
+    const { cr } = drawing;
+    const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
+    const list = evs.length ? evs : [e];
+    const ctx = cv._ctx;
+    for (const ev of list) {
+      const x = ev.clientX - cr.left, y = ev.clientY - cr.top;
+      if (drawing.erase) { eraseAt(x, y, cr); continue; }
       const last = drawing.pts[drawing.pts.length - 1];
-      if (Math.hypot(x - last[0], y - last[1]) < 1.2) continue;
+      if (Math.hypot(x - last[0], y - last[1]) < 0.8) continue;
       drawing.pts.push([x, y]);
-      const ctx = cv.getContext('2d');
-      inkStroke(ctx, drawing.pts.slice(-3), inkColorOf(inkColor), inkPx());
+      if (drawing.snapped) continue;
+      inkLive(ctx, drawing.pts);
     }
+    if (drawing.erase || !inkPref.straight) return;
+    clearTimeout(holdTimer);
+    if (drawing.snapped) { preview(); }
+    holdTimer = setTimeout(() => { if (drawing && !drawing.erase) { drawing.snapped = true; preview(); } }, 500);
   });
   const end = async (e) => {
     if (touchId === e.pointerId) { touchId = null; return; }
     if (!drawing) return;
+    clearTimeout(holdTimer);
     const d = drawing;
     drawing = null;
     if (d.erase || !d.pts) return;
-    const b = blockAtY(d.pts[0][1]);
-    const r = blocks[b].el.getBoundingClientRect(), cr = inkCv().getBoundingClientRect();
+    let pts = d.pts;
+    if (inkPref.straight) pts = straighten(pts, d.snapped);
+    const b = blockAtY(pts[0][1], d.cr);
+    const r = blocks[b].el.getBoundingClientRect(), cr = d.cr;
     const fs = parseFloat(getComputedStyle($('#score')).fontSize) || 30;
     const o = liveOvForWrite();
     if (!o) return;
     o.ink = [...(o.ink || []), {
-      b, c: inkColor, w: +(inkPx() / fs).toFixed(4),
-      p: d.pts.map(([x, y]) => [+((x - (r.left - cr.left)) / r.width).toFixed(4), +((y - (r.top - cr.top)) / r.height).toFixed(4)]),
+      b, c: inkPref.color, w: +(inkPref.width / fs).toFixed(4),
+      p: pts.map(([x, y]) => [+((x - (r.left - cr.left)) / r.width).toFixed(4), +((y - (r.top - cr.top)) / r.height).toFixed(4)]),
     }];
+    queueInk(); // 先に、画面を更新してから、保存する(保存を待たずに、線が整う)
     await saveLive(o);
   };
   document.addEventListener('pointerup', end);
@@ -3271,12 +3327,24 @@ function setLiveTool(t) {
   if (liveTool === 'skipBar') toast('省略したい小節を、タップしてください(もう一度タップで、復元)');
 }
 document.querySelectorAll('#liveBar [data-tool]').forEach((b) => { b.onclick = () => setLiveTool(b.dataset.tool); });
+// ペンの色(よく使う色 + 自由に選ぶ色)・太さ(スライダー)・直線補正
+const syncInkUi = () => {
+  document.querySelectorAll('#liveBar [data-ink]').forEach((x) => x.classList.toggle('on', x.dataset.ink === inkPref.color));
+  $('#lvColor').classList.toggle('on', inkPref.color[0] === '#' && !Object.values(INK_COLORS).includes(inkPref.color));
+  if (inkPref.color[0] === '#') $('#lvColor').value = inkPref.color;
+  $('#lvWidth').value = inkPref.width;
+  $('#lvWidthV').textContent = inkPref.width + 'px';
+  $('#lvDot').style.setProperty('--w', inkPref.width + 'px');
+  $('#lvDot').style.background = inkColorOf(inkPref.color);
+  $('#lvStraight').classList.toggle('on', inkPref.straight);
+};
 document.querySelectorAll('#liveBar [data-ink]').forEach((b) => {
-  b.onclick = () => { inkColor = b.dataset.ink; document.querySelectorAll('#liveBar [data-ink]').forEach((x) => x.classList.toggle('on', x === b)); if (liveTool !== 'pen') setLiveTool('pen'); };
+  b.onclick = () => { inkPref.color = b.dataset.ink; saveInkPref(); syncInkUi(); if (liveTool !== 'pen') setLiveTool('pen'); };
 });
-document.querySelectorAll('#liveBar [data-size]').forEach((b) => {
-  b.onclick = () => { inkSize = Number(b.dataset.size); document.querySelectorAll('#liveBar [data-size]').forEach((x) => x.classList.toggle('on', x === b)); };
-});
+$('#lvColor').oninput = () => { inkPref.color = $('#lvColor').value; saveInkPref(); syncInkUi(); if (liveTool !== 'pen') setLiveTool('pen'); };
+$('#lvWidth').oninput = () => { inkPref.width = Number($('#lvWidth').value); saveInkPref(); syncInkUi(); };
+$('#lvStraight').onclick = () => { inkPref.straight = !inkPref.straight; saveInkPref(); syncInkUi(); toast(inkPref.straight ? '直線補正: オン(ほぼ直線の線は直線に。書いたまま止めると、直線になります)' : '直線補正: オフ'); };
+syncInkUi();
 function closeLive() { if (liveTool) setLiveTool(liveTool); $('#liveBar').classList.add('hidden'); $('#btnLive').classList.remove('on'); }
 $('#btnLive').onclick = () => {
   const open = $('#liveBar').classList.contains('hidden');

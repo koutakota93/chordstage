@@ -750,7 +750,7 @@ dialog.wide { width: min(900px, 96vw); }
 #svList li .drag:active { background: color-mix(in srgb, var(--accent) 18%, transparent); }
 
 /* ---- ライブ編集(セットリスト専用): 手書き・省略 ---- */
-#inkCv { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 4; }
+#inkCv { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 4; touch-action: none; }
 #inkCv.on { pointer-events: auto; touch-action: none; cursor: crosshair; }
 #score.live-ink .blk { cursor: crosshair; }
 #liveBar { position: absolute; z-index: 9; left: 10px; right: 150px; top: 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 10px;
@@ -770,3 +770,11 @@ dialog.wide { width: min(900px, 96vw); }
 .blk.skipped.cur, .blk.skipped.nxt { background-color: transparent; box-shadow: none; }
 .cell.skipbar { opacity: .3; background-image: repeating-linear-gradient(135deg, transparent 0 7px, color-mix(in srgb, var(--fg) 20%, transparent) 7px 9px); border-radius: 8px; }
 #score.live-skip .blk { cursor: pointer; }
+
+#liveBar .lvsw input[type=color] { width: 40px; height: 40px; padding: 2px; border-radius: 50%; border: 3px solid var(--line); background: var(--panel); cursor: pointer; }
+#liveBar .lvsw input[type=color].on { border-color: var(--accent); }
+#liveBar .lvwd { display: inline-flex; align-items: center; gap: 8px; padding: 0 6px; }
+#liveBar .lvwd input[type=range] { width: 130px; }
+#liveBar #lvDot { display: inline-block; width: var(--w, 4px); height: var(--w, 4px); min-width: 4px; min-height: 4px; border-radius: 50%; }
+#liveBar #lvWidthV { font-size: 12px; color: var(--dim); min-width: 3.2em; }
+#liveBar #lvStraight.on { background: var(--accent); color: var(--accent-fg); font-weight: 700; }
