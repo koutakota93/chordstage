@@ -1974,7 +1974,6 @@ function renderPlayer() {
   buildKeySel(tr);
   document.querySelectorAll('#accGroup button').forEach((b) => b.classList.toggle('on', b.dataset.acc === (cur.accidental || 'auto')));
   $('#grLabel').textContent = (cur.groupLines || DEFAULT_GROUP) + '行';
-  $('#stLabel').textContent = stepOf() + '行';
   const set = playCtx && setlists.find((x) => x.id === playCtx.setId);
   const order = set ? set.songIds.filter((id) => songs.some((x) => x.id === id)) : [];
   const idx = order.indexOf(cur.id);
@@ -2268,7 +2267,7 @@ function gotoSong(d) {
 $('#prevSong').onclick = () => gotoSong(-1);
 $('#nextSong').onclick = () => gotoSong(1);
 let armNext = false;
-const stepOf = () => Math.max(1, Math.min(8, (cur && cur.stepLines) || 1));
+const stepOf = () => 1; // 「次へ」「前へ」は、1行ずつ(省略した行は、数えずに飛ばす)
 const next = () => {
   let tgt = pos;
   for (let k = 0; k < stepOf(); k++) { const j = activeAfter(tgt); if (j < 0) break; tgt = j; } // 省略した行は、数えずに進む
@@ -2285,14 +2284,6 @@ const prev = () => {
   for (let k = 0; k < stepOf(); k++) { const j = activeBefore(t); if (j < 0) break; t = j; }
   jumpTo(t);
 };
-function setStep(n) {
-  n = Math.max(1, Math.min(8, n));
-  cur.stepLines = n;
-  persist();
-  $('#stLabel').textContent = n + '行';
-}
-$('#stDown').onclick = () => setStep(stepOf() - 1);
-$('#stUp').onclick = () => setStep(stepOf() + 1);
 $('#btnNext').onclick = next;
 $('#btnPrev').onclick = prev;
 
@@ -2324,7 +2315,7 @@ function hitsNowChord(e) {
 }
 $('#score').addEventListener('click', (e) => {
   if (liveTool === 'skipLine' || liveTool === 'skipBar') return liveSkipTap(e); // ライブ編集: 省略する行・小節を、タップで選ぶ
-  if (liveTool === 'pen' || liveTool === 'lasso') return; // 手書き中は、タップで行を移動しない
+  if (inkToolOn()) return; // 手書き中は、タップで行を移動しない
   if (memoMode || !settings.tapJump) return;
   const sech = e.target.closest('.sech');
   if (sech) return jumpTo(Number(sech.dataset.block));
@@ -2982,7 +2973,7 @@ function switchTheme(next) {
   if (sel) sel.value = next;
 }
 function updateThemeButtons() {
-  document.querySelectorAll('.themebtn').forEach((b) => { b.textContent = settings.theme === 'dark' ? '☀ ライト' : '🌙 ダーク'; b.title = settings.theme === 'dark' ? 'ライトモードに切り替え' : 'ダークモードに切り替え'; });
+  document.querySelectorAll('.themebtn').forEach((b) => { b.textContent = settings.theme === 'dark' ? '☀' : '🌙'; b.title = settings.theme === 'dark' ? 'ライトモードに切り替え' : 'ダークモードに切り替え'; });
 }
 document.querySelectorAll('.themebtn').forEach((b) => { b.onclick = () => { switchTheme(settings.theme === 'dark' ? 'light' : 'dark'); setTimeout(() => { if (!$('#player').classList.contains('hidden')) refit(); }, 0); }; });
 updateThemeButtons();
@@ -3067,7 +3058,8 @@ updateInstallUi();
 // ---------- ライブ編集(セットリスト専用) ----------
 // セットリストから開いた曲に、そのライブだけの編集を入れる: Sペンの手書き / 行・小節の省略(復元もできる)。
 // 内容は、セットリストの、その曲の設定(overrides)に入る(曲本体は変わらない。同期の対象)
-let liveTool = null;           // 'pen' | 'erase' | 'skipLine' | 'skipBar' | null
+let liveTool = null;           // 'pen' | 'erase' | 'lasso' | 'skipLine' | 'skipBar' | null
+const inkToolOn = () => liveTool === 'pen' || liveTool === 'erase' || liveTool === 'lasso';
 // ペンの設定(色・太さ・直線補正)は、端末に覚える
 const inkPref = (() => { try { return (() => { const j = JSON.parse(localStorage.getItem('cs.ink') || '{}'); return { color: 'fg', width: 3.5, shape: !!j.straight, ...j, adapt: true }; })(); } catch { return { color: 'fg', width: 3.5, shape: false, adapt: true }; } })();
 const saveInkPref = () => { try { localStorage.setItem('cs.ink', JSON.stringify(inkPref)); } catch {} };
@@ -3151,18 +3143,19 @@ function setupInk() {
     $('#score').addEventListener('scroll', queueInk, { passive: true });
     window.addEventListener('resize', queueInk);
   }
-  cv.classList.toggle('on', liveTool === 'pen' || liveTool === 'lasso');
+  cv.classList.toggle('on', inkToolOn());
   queueInk();
 }
 function sizeInk() {
   const cv = inkCv(), score = $('#score');
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const w = score.clientWidth, h = score.clientHeight;
+  if (!w || !h) return cv._ctx || cv.getContext('2d'); // 全画面への切り替え中など、大きさが0のときは、作り直さない
   if (cv._w !== w || cv._h !== h || cv._d !== dpr) {
     cv.style.width = w + 'px'; cv.style.height = h + 'px';
     cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
     cv._w = w; cv._h = h; cv._d = dpr;
-    cv._ctx = cv.getContext('2d', { desynchronized: true }); // 遅れを減らす(対応している端末で、画面への反映を早める)
+    cv._ctx = cv.getContext('2d');
   }
   cv._ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   return cv._ctx;
@@ -3438,27 +3431,6 @@ function recognizeShape(pts, force) {
     return (o.ink || []).filter((st) => lassoSel.has(st.id)).map((st) => ({ st, pts: inkToCanvas(st, cr, rects, fsNow) })).filter((x) => x.pts);
   };
   // ペンのボタンを押している間だけ、消しゴム(ボタンを離すと、ペンに戻る)
-  // Galaxy Tab S8 世代のSペンは、横のボタンを、ペンの「バレルボタン」(buttons の 2)として伝えるが、機種やChromeの版で、
-  // 32(消しゴム側)・button の 2 / 5 で届くこともある。ボタンを、ペンが浮いている間(ホバー)に押す場合もあるので、
-  // ペンのすべての動きから、ボタンの状態を覚えておき、どれか1つでも押されていれば、消しゴムにする
-  let penButtons = 0;
-  const trackPen = (e) => { if (e.pointerType === 'pen' || e.pointerType === 'mouse') { penButtons = e.type === 'pointerup' || e.type === 'pointercancel' ? 0 : e.buttons; } if (diagUntil > Date.now()) showDiag(e); };
-  ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'pointerrawupdate', 'pointerover', 'pointerenter'].forEach((t) => document.addEventListener(t, trackPen, true));
-  document.addEventListener('contextmenu', (e) => { if (e.target === inkCv() && (liveTool === 'pen' || liveTool === 'lasso')) e.preventDefault(); }); // ボタンを押したときの、メニューを出さない
-  const eraserHeld = (e) => (((e.buttons | ((e.pointerType === 'pen' || e.pointerType === 'mouse') ? penButtons : 0)) & 34) !== 0) || e.button === 2 || e.button === 5;
-  let diagUntil = 0;
-  const showDiag = (e) => {
-    if (e.pointerType !== 'pen' && e.pointerType !== 'mouse') return;
-    let d = document.getElementById('penDiag');
-    if (!d) { d = el('div'); d.id = 'penDiag'; document.body.append(d); }
-    d.textContent = `ペン: ${e.type} / ${e.pointerType} / buttons=${e.buttons} button=${e.button} / 筆圧=${(e.pressure || 0).toFixed(2)} / 消しゴム判定=${eraserHeld(e) ? 'オン' : 'オフ'}`;
-    d.hidden = false;
-  };
-  $('#lvDiag').onclick = () => {
-    diagUntil = Date.now() + 25000;
-    toast('ペンの確認: 25秒間、画面の下に、ペンの信号を表示します。ペンのボタンを押して、「消しゴム判定」が変わるか見てください');
-    setTimeout(() => { const d = document.getElementById('penDiag'); if (d && diagUntil <= Date.now()) d.hidden = true; }, 25500);
-  };
   const startPen = (x, y, cr) => {
     drawing = { pts: [[x, y]], cr, snapped: false };
     const blkIdx = blockAtY(y, cr);
@@ -3471,13 +3443,13 @@ function recognizeShape(pts, force) {
   };
   document.addEventListener('pointerdown', (e) => {
     const cv = inkCv();
-    if (!cv || e.target !== cv || !(liveTool === 'pen' || liveTool === 'lasso')) return;
+    if (!cv || e.target !== cv || !inkToolOn()) return;
     e.preventDefault();
     try { cv.setPointerCapture(e.pointerId); } catch {}
     if (e.pointerType === 'touch') { touchId = e.pointerId; touchStart(e); return; } // 指は、画面のスクロール(ペンだけが、書く)
     const cr = cv.getBoundingClientRect();
     const x = e.clientX - cr.left, y = e.clientY - cr.top;
-    if (eraserHeld(e)) { drawing = { erase: true, cr }; eraseAt(x, y, cr); return; }
+    if (liveTool === 'erase') { drawing = { erase: true, cr }; eraseAt(x, y, cr); return; }
     if (liveTool === 'lasso') {
       const bb = strokeBBox(selectedCanvas().map((q) => q.pts));
       if (bb && x >= bb.x0 - 12 && x <= bb.x1 + 12 && y >= bb.y0 - 12 && y <= bb.y1 + 12) { drawing = { move: true, cr, x0: x, y0: y }; lassoDrag = { dx: 0, dy: 0 }; return; } // 選んだ範囲の中から動かすと、移動
@@ -3493,12 +3465,6 @@ function recognizeShape(pts, force) {
     if (touchId === e.pointerId && e.pointerType === 'touch') { const list = e.getCoalescedEvents ? e.getCoalescedEvents() : []; touchMove(list.length ? list[list.length - 1] : e); return; }
     if (!drawing) return;
     const { cr } = drawing;
-    // 書いている途中で、ボタンを押したら、消しゴムに。離したら、ペンに戻る
-    if (!drawing.lasso && !drawing.move) {
-      const held = eraserHeld(e);
-      if (held && !drawing.erase) { drawing = { erase: true, cr }; clearTimeout(holdTimer); queueInk(); }
-      else if (!held && drawing.erase && liveTool === 'pen') { startPen(e.clientX - cr.left, e.clientY - cr.top, cr); return; }
-    }
     const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
     const list = evs.length ? evs : [e];
     const ctx = cv._ctx;
@@ -3617,11 +3583,13 @@ function setLiveTool(t) {
   liveTool = liveTool === t ? null : t;
   document.querySelectorAll('#liveBar [data-tool]').forEach((b) => b.classList.toggle('on', b.dataset.tool === liveTool));
   const cv = inkCv();
-  if (cv) cv.classList.toggle('on', liveTool === 'pen' || liveTool === 'lasso');
+  if (cv) cv.classList.toggle('on', inkToolOn());
   $('#score').classList.toggle('live-skip', liveTool === 'skipLine' || liveTool === 'skipBar');
-  $('#score').classList.toggle('live-ink', liveTool === 'pen' || liveTool === 'lasso');
+  $('#score').classList.toggle('live-ink', inkToolOn());
   $('#lvLasso').classList.toggle('hidden', liveTool !== 'lasso');
+  $('#liveBar').classList.toggle('lassoMode', liveTool === 'lasso'); // 投げ縄のときは、ペンの設定を隠して、横1列に収める
   if (liveTool !== 'lasso') { lassoSel = new Set(); lassoPath = null; lassoDrag = null; queueInk(); }
+  if (liveTool === 'erase') toast('消しゴムモード: ペンでなぞった線を消します');
   if (liveTool === 'skipLine') toast('省略したい行を、タップしてください(もう一度タップで、復元)');
   if (liveTool === 'skipBar') toast('省略したい小節を、タップしてください(もう一度タップで、復元)');
 }
@@ -3632,7 +3600,7 @@ const syncInkUi = () => {
   $('#lvColor').classList.toggle('on', inkPref.color[0] === '#' && !Object.values(INK_COLORS).includes(inkPref.color));
   if (inkPref.color[0] === '#') $('#lvColor').value = inkPref.color;
   $('#lvWidth').value = inkPref.width;
-  $('#lvWidthV').textContent = inkPref.width + 'px';
+  $('#lvWidthV').textContent = inkPref.width;
   $('#lvDot').style.setProperty('--w', inkPref.width + 'px');
   $('#lvDot').style.background = inkColorOf(inkPref.color);
   $('#lvShape').classList.toggle('on', inkPref.shape);
@@ -3652,7 +3620,6 @@ $('#btnLive').onclick = () => {
   $('#btnLive').classList.add('on');
   if (liveTool !== 'pen') setLiveTool('pen'); // ライブ編集に入ったら、手書きモードを、オンにしておく
 };
-$('#lvClose').onclick = closeLive;
 
 // ---------- コード譜の編集 ----------
 function updateEdInfo() {

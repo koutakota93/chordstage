@@ -803,5 +803,53 @@ dialog.wide { width: min(900px, 96vw); }
 #penDiag { position: fixed; left: 10px; right: 10px; bottom: 90px; z-index: 99; padding: 8px 12px; border-radius: 10px; background: #000c; color: #fff; font: 12px/1.4 ui-monospace, Menlo, monospace; pointer-events: none; }
 #penDiag[hidden] { display: none; }
 #liveBar .lvwd input[type=range] { width: 64px; }
-#liveBar #lvWidthV { display: none; }
+#liveBar #lvWidthV { display: inline-block; min-width: 2.2em; font-size: 12px; font-weight: 700; color: var(--fg); text-align: left; }
 #liveBar .lvsw button, #liveBar .lvsw input[type=color] { width: 24px !important; height: 24px !important; min-width: 24px !important; min-height: 24px !important; }
+
+/* 色の選択: 選んだ色は、枠で囲むだけ(ボタンの色は、変えない) */
+#liveBar .lvsw button, #liveBar .lvsw button.on { background: var(--c) !important; color: inherit; }
+#liveBar .lvsw button { border: 2px solid color-mix(in srgb, var(--fg) 18%, transparent); box-shadow: none; }
+#liveBar .lvsw button.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--accent); }
+#liveBar .lvsw input[type=color].on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--accent); }
+/* ボタンの文字(一目で分かりにくいものだけ) */
+#liveBar button .lbl { font-size: 12px; font-weight: 700; margin-left: 4px; white-space: nowrap; }
+#liveBar button:has(.lbl) { padding: 0 9px !important; }
+#liveBar .lvx { display: none; }
+#liveBar #lvRestore[data-n]:not([data-n=""])::after { right: -2px; top: -5px; }
+
+/* ---- 演奏画面の上のバー: 横1行に収める(アイコン中心。分かりにくいものだけ、文字) ---- */
+@media (min-width: 761px) {
+  #player > .bar#playerBar { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; gap: 4px; padding: 4px 8px; scrollbar-width: none; align-items: center; }
+  #player > .bar#playerBar::-webkit-scrollbar { display: none; }
+  #player > .bar#playerBar > *, #player > .bar#playerBar .group { flex: none; }
+  #player > .bar#playerBar button { min-height: 40px; min-width: 38px; padding: 0 9px; font-size: 14px; }
+  #player > .bar#playerBar button svg { width: 20px; height: 20px; vertical-align: -4px; }
+  #player > .bar#playerBar #btnLive svg { margin-right: 4px; }
+  #player > .bar#playerBar .title { flex: 1 1 60px; min-width: 60px; max-width: 280px; order: 0; }
+  #player > .bar#playerBar .title b { font-size: 15px; }
+  #player > .bar#playerBar .title span { font-size: 11px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #player > .bar#playerBar .sp { flex: 1 1 0; min-width: 0; }
+  #player > .bar#playerBar .group button { min-width: 34px; padding: 0 7px; }
+  #player > .bar#playerBar #accGroup .acclab { padding: 0 2px; }
+  #player > .bar#playerBar #accGroup button[data-acc=auto] { width: 42px; min-width: 42px; }
+  #player > .bar#playerBar #accGroup button[data-acc=sharp], #player > .bar#playerBar #accGroup button[data-acc=flat] { width: 34px; min-width: 34px; }
+  #player > .bar#playerBar #fsDown, #player > .bar#playerBar #fsUp { width: 38px; min-width: 38px; }
+  #player > .bar#playerBar #btnAutoFit { width: 72px; min-width: 72px; padding: 0; font-size: 13px; }
+  #player > .bar#playerBar #keySel { width: 108px; min-width: 108px; min-height: 40px; font-size: 14px; }
+  #player > .bar#playerBar #grLabel { min-width: 32px; font-size: 13px; }
+  #player > .bar#playerBar .themebtn { font-size: 17px; }
+}
+#liveBar.lassoMode .lvsw, #liveBar.lassoMode .lvwd, #liveBar.lassoMode #lvShape { display: none; }
+#liveBar .lvwd input[type=range] { width: 54px; }
+#liveBar .lvsep { margin: 0 2px !important; }
+@media (min-width: 761px) {
+  #player > .bar#playerBar #accGroup .acclab { display: none; }
+  #player > .bar#playerBar #keySel { width: 98px; min-width: 98px; padding: 0 4px; }
+  #player > .bar#playerBar #btnAutoFit { width: 62px; min-width: 62px; font-size: 12.5px; }
+  #player > .bar#playerBar #fsDown, #player > .bar#playerBar #fsUp { width: 34px; min-width: 34px; }
+  #player > .bar#playerBar .group button { min-width: 32px; padding: 0 6px; }
+  #player > .bar#playerBar button { padding: 0 7px; min-width: 34px; }
+  #player > .bar#playerBar { gap: 3px; padding: 4px 6px; }
+  #player > .bar#playerBar #accGroup button[data-acc=auto] { width: 38px; min-width: 38px; }
+  #player > .bar#playerBar #accGroup button[data-acc=sharp], #player > .bar#playerBar #accGroup button[data-acc=flat] { width: 30px; min-width: 30px; }
+}

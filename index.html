@@ -118,13 +118,13 @@
 </div>
 
 <div id="player" class="view hidden">
-  <header class="bar">
-    <button id="btnBack">← 一覧</button>
-    <button id="prevSong" class="hidden" title="セットリストの前の曲">‹ 前の曲</button>
-    <button id="nextSong" class="hidden" title="セットリストの次の曲">次の曲 ›</button>
+  <header class="bar" id="playerBar">
+    <button id="btnBack" title="一覧へ戻る">← 一覧</button>
+    <button id="prevSong" class="hidden" title="セットリストの前の曲" aria-label="前の曲">‹</button>
+    <button id="nextSong" class="hidden" title="セットリストの次の曲" aria-label="次の曲">›</button>
     <div class="title"><b id="pTitle"></b><span id="pMeta"></span></div>
     <div class="sp"></div>
-    <div class="group" title="移調">
+    <div class="group" title="キー(移調)">
       <select id="keySel" aria-label="キー(移調)"></select>
     </div>
     <div class="group" id="accGroup" title="移調後のコードの表記(♯優先 / ♭優先)">
@@ -136,45 +136,41 @@
     <div class="group" title="一度にハイライトする行数">
       <button id="grDown">−</button><span id="grLabel">1行</span><button id="grUp">＋</button>
     </div>
-    <div class="group" id="stepGroup" title="「次へ」「前へ」を1回押したとき(ペダルも)に、進む・戻る行数">
-      <span class="acclab">送り</span><button id="stDown">−</button><span id="stLabel">1行</span><button id="stUp">＋</button>
-    </div>
-    <button id="btnMemoMode">メモ</button>
-    <button id="btnLive" class="hidden" title="このライブ専用の編集(手書き・省略)">ライブ編集</button>
+    <button id="btnMemoMode" title="演奏メモの編集">メモ</button>
+    <button id="btnLive" class="hidden" title="このライブ専用の編集(手書き・省略)"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20l1-4L16.5 4.5a2.1 2.1 0 013 3L8 19z"/></svg>ライブ</button>
     <button id="btnEdit" title="コード譜のデータを編集">編集</button>
-    <button id="btnInfo">情報</button>
+    <button id="btnInfo" title="曲の情報" aria-label="情報"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8v.01"/></svg></button>
     <button id="btnRange" title="歌詞の色の区切りの表示/非表示">区切り</button>
-    <button class="themebtn"></button>
-    <button id="btnSettings2">設定</button>
-    <button id="btnFocus" title="上下のバーを隠して譜面を最大化">全画面</button>
+    <button class="themebtn" aria-label="ライト/ダーク"></button>
+    <button id="btnSettings2" title="設定" aria-label="設定"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg></button>
+    <button id="btnFocus" title="上下のバーを隠して、譜面を最大化(全画面)" aria-label="全画面"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
   </header>
   <button id="btnUnfocus" class="hidden" title="バーを戻す">☰</button>
   <div class="stage">
     <div id="score"></div>
     <nav id="minimap"></nav>
     <div id="liveBar" class="hidden">
-      <button data-tool="pen" title="手書き(Sペン)。ペンのボタンを押している間だけ消しゴム。指は、スクロール" aria-label="手書き"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20l1-4L16.5 4.5a2.1 2.1 0 013 3L8 19z"/><path d="M14.5 6.5l3 3"/></svg></button>
-      <button data-tool="lasso" title="投げ縄: 囲んだ手書きを選んで、移動・コピー・削除" aria-label="投げ縄"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4c4.4 0 8 2 8 4.5S16.4 13 12 13 4 11 4 8.5 7.6 4 12 4z" stroke-dasharray="3 2.5"/><path d="M9 13c-1 2 0 4.5 2.5 5.5"/><circle cx="12" cy="19" r="1.4"/></svg></button>
+      <button data-tool="pen" title="手書き(Sペンで書く。指は、スクロール)" aria-label="手書き"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20l1-4L16.5 4.5a2.1 2.1 0 013 3L8 19z"/><path d="M14.5 6.5l3 3"/></svg></button>
+      <button data-tool="erase" title="消しゴムモード(なぞった線を消す)" aria-label="消しゴム"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 20H9L4 15a2 2 0 010-2.8l8-8a2 2 0 012.8 0l5 5a2 2 0 010 2.8L13 19"/><path d="M8 11l6 6"/></svg><span class="lbl">消しゴム</span></button>
+      <button data-tool="lasso" title="投げ縄: 囲んだ手書きを選んで、移動・コピー・削除" aria-label="投げ縄"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4c4.4 0 8 2 8 4.5S16.4 13 12 13 4 11 4 8.5 7.6 4 12 4z" stroke-dasharray="3 2.5"/><path d="M9 13c-1 2 0 4.5 2.5 5.5"/><circle cx="12" cy="19" r="1.4"/></svg></button>
       <span class="lvsep"></span>
       <span class="lvsw"><button data-ink="fg" style="--c:var(--fg)" title="文字の色" aria-label="文字の色"></button><button data-ink="red" style="--c:#ef4444" aria-label="赤"></button><button data-ink="blue" style="--c:#3b82f6" aria-label="青"></button><button data-ink="green" style="--c:#22c55e" aria-label="緑"></button><input type="color" id="lvColor" value="#f59e0b" title="好きな色を選ぶ" aria-label="好きな色"></span>
       <span class="lvwd" title="ペン先の太さ"><i id="lvDot"></i><input type="range" id="lvWidth" min="1" max="24" step="0.5" value="3.5" aria-label="ペン先の太さ"><span id="lvWidthV"></span></span>
-      <button id="lvShape" title="図形補正(オン/オフ): 直線・四角形・三角形・円を、きれいな図形にする。書いたまま止めても、図形になる" aria-label="図形補正"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7" cy="7.5" r="3.6"/><rect x="12.5" y="3.5" width="8" height="7.5" rx="0.6"/><path d="M4 20.5l4-7 4 7z"/><path d="M14 20.5h6.5"/></svg></button>
+      <button id="lvShape" title="図形補正(オン/オフ): 直線・四角形・三角形・円を、きれいな図形にする。書いたまま止めても、図形になる" aria-label="図形補正"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7" cy="7.5" r="3.6"/><rect x="12.5" y="3.5" width="8" height="7.5" rx="0.6"/><path d="M4 20.5l4-7 4 7z"/><path d="M14 20.5h6.5"/></svg></button>
       <span id="lvLasso" class="hidden">
         <span class="lvsep"></span>
-        <button id="lvCopy" title="コピー" aria-label="コピー"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 00-2-2H6a2 2 0 00-2 2v8a2 2 0 002 2h2"/></svg></button>
-        <button id="lvPaste" title="貼り付け(画面の中央に出る)" aria-label="貼り付け"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="5" width="12" height="16" rx="2"/><path d="M9 5V4a1 1 0 011-1h4a1 1 0 011 1v1"/><path d="M9.5 13h5M12 10.5v5"/></svg></button>
-        <button id="lvDel" title="選んだ手書きを削除" aria-label="選択を削除"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
-        <button id="lvSelClear" title="選択を解除" aria-label="選択解除"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5h14v14H5z" stroke-dasharray="3 2.5"/><path d="M9 9l6 6M15 9l-6 6"/></svg></button>
+        <button id="lvCopy" title="コピー" aria-label="コピー"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 00-2-2H6a2 2 0 00-2 2v8a2 2 0 002 2h2"/></svg></button>
+        <button id="lvPaste" title="貼り付け(画面の中央に出る)" aria-label="貼り付け"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="5" width="12" height="16" rx="2"/><path d="M9 5V4a1 1 0 011-1h4a1 1 0 011 1v1"/><path d="M9.5 13h5M12 10.5v5"/></svg></button>
+        <button id="lvDel" title="選んだ手書きを削除" aria-label="選択を削除"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
+        <button id="lvSelClear" title="選択を解除" aria-label="選択解除"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5h14v14H5z" stroke-dasharray="3 2.5"/><path d="M9 9l6 6M15 9l-6 6"/></svg></button>
       </span>
       <span class="lvsep"></span>
-      <button data-tool="skipLine" title="行を省略(タップした行を、飛ばす。もう一度タップで復元)" aria-label="行を省略"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h16M4 15h16"/><path d="M3 19L21 5" stroke="#ef4444"/></svg></button>
-      <button data-tool="skipBar" title="小節を省略(タップした小節を、飛ばす)" aria-label="小節を省略"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 5v14M12 5v14M18 5v14"/><path d="M8 18L16 6" stroke="#ef4444"/></svg></button>
-      <button id="lvRestore" title="省略をすべて復元" aria-label="省略をすべて復元"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 109-9 9 9 0 00-6.7 3L3 8"/><path d="M3 3v5h5"/></svg></button>
+      <button data-tool="skipLine" title="行を省略(タップした行を飛ばす。もう一度タップで復元)" aria-label="行を省略"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h16M4 15h16"/><path d="M3 19L21 5" stroke="#ef4444"/></svg><span class="lbl">行省略</span></button>
+      <button data-tool="skipBar" title="小節を省略(タップした小節を飛ばす)" aria-label="小節を省略"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 5v14M12 5v14M18 5v14"/><path d="M8 18L16 6" stroke="#ef4444"/></svg><span class="lbl">小節省略</span></button>
+      <button id="lvRestore" title="省略をすべて復元" aria-label="省略をすべて復元"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 109-9 9 9 0 00-6.7 3L3 8"/><path d="M3 3v5h5"/></svg><span class="lbl">復元</span></button>
       <span class="lvsep"></span>
-      <button id="lvUndo" title="1個戻す(手書き・省略など、すべての操作)" aria-label="1個戻す"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 010 12h-3"/></svg></button>
-      <button id="lvClear" title="手書きを全消去" aria-label="手書きを全消去"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg><b class="lvx">全</b></button>
-      <button id="lvDiag" title="ペンの確認(ボタンの信号を表示)" aria-label="ペンの確認"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v.01M12 11v5"/></svg></button>
-      <button id="lvClose" title="閉じる" aria-label="閉じる"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      <button id="lvUndo" title="1個戻す(手書き・省略など、すべての操作)" aria-label="1個戻す"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 010 12h-3"/></svg><span class="lbl">戻す</span></button>
+      <button id="lvClear" title="手書きを全消去" aria-label="手書きを全消去"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
     </div>
     <button id="fab" class="hidden" aria-label="再生・停止"><span class="fi">▶</span><span class="fl">開始</span></button>
   </div>
