@@ -2236,6 +2236,7 @@ function setPos(i, { scroll = true } = {}) {
     b.el.classList.toggle('past', bi < pos);
   });
   document.querySelectorAll('#minimap button').forEach((b) => b.classList.toggle('on', Number(b.dataset.s) === blocks[pos].s));
+  queueInk(); // ハイライトが動いたら、手書きの色も、合わせ直す
   document.querySelectorAll('.memo').forEach((m) => {
     const g = Number(m.dataset.g);
     m.classList.toggle('soon', g >= pos && g <= end + 2 && !skipSets().lines.has(g));
@@ -3068,7 +3069,7 @@ updateInstallUi();
 // 内容は、セットリストの、その曲の設定(overrides)に入る(曲本体は変わらない。同期の対象)
 let liveTool = null;           // 'pen' | 'erase' | 'skipLine' | 'skipBar' | null
 // ペンの設定(色・太さ・直線補正)は、端末に覚える
-const inkPref = (() => { try { return { color: 'fg', width: 3.5, straight: false, ...JSON.parse(localStorage.getItem('cs.ink') || '{}') }; } catch { return { color: 'fg', width: 3.5, straight: false }; } })();
+const inkPref = (() => { try { return { color: 'fg', width: 3.5, straight: false, adapt: true, ...JSON.parse(localStorage.getItem('cs.ink') || '{}') }; } catch { return { color: 'fg', width: 3.5, straight: false, adapt: true }; } })();
 const saveInkPref = () => { try { localStorage.setItem('cs.ink', JSON.stringify(inkPref)); } catch {} };
 const INK_COLORS = { fg: null, red: '#ef4444', blue: '#3b82f6', green: '#22c55e' };
 async function saveLive(o) {
@@ -3157,6 +3158,39 @@ function sizeInk() {
 }
 const inkColorOf = (c) => (c && c[0] === '#' ? c : INK_COLORS[c] || getComputedStyle(document.documentElement).getPropertyValue('--fg').trim() || '#fff');
 const mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+// ---- ハイライトに重なった線は、見やすい色にする ----
+const rgbOf = (c) => {
+  const m = String(c).match(/rgba?\(([^)]+)\)/);
+  if (m) return m[1].split(/[ ,\/]+/).slice(0, 3).map(Number);
+  const h = String(c).replace('#', '');
+  const f = h.length === 3 ? h.split('').map((x) => x + x).join('') : h;
+  return [0, 2, 4].map((i) => parseInt(f.slice(i, i + 2), 16));
+};
+const lum = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+const contrast = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+let hlRgb = null;
+const hlColor = () => { // ハイライトの背景色(色の設定に合わせて、そのつど読む)
+  const p = document.createElement('div');
+  p.style.cssText = 'position:fixed;left:-9px;top:-9px;width:1px;height:1px;background:var(--hl)';
+  document.body.append(p);
+  hlRgb = rgbOf(getComputedStyle(p).backgroundColor);
+  p.remove();
+  return hlRgb;
+};
+// ユーザーが選んだ色が、ハイライトの背景と見分けにくければ、色合いを残したまま暗く(または明るく)する。それでも足りなければ、黒か白
+function adaptInk(c, bg) {
+  const base = rgbOf(inkColorOf(c));
+  if (contrast(base, bg) >= 3.2) return `rgb(${base.join(',')})`;
+  let best = null;
+  for (const target of [[0, 0, 0], [255, 255, 255]]) {
+    for (let t = 0.15; t <= 0.9; t += 0.15) {
+      const mixed = base.map((v, i) => Math.round(v + (target[i] - v) * t));
+      if (contrast(mixed, bg) >= 4.5) { if (!best || t < best.t) best = { t, c: mixed }; break; }
+    }
+  }
+  if (best) return `rgb(${best.c.join(',')})`;
+  return contrast([0, 0, 0], bg) >= contrast([255, 255, 255], bg) ? '#111' : '#fff';
+}
 function inkStyle(ctx, color, w) { ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = w; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; }
 function inkFull(ctx, pts, color, w) { // 1本の線を、まとめて描く
   inkStyle(ctx, color, w);
@@ -3195,12 +3229,14 @@ function redrawInk() {
   if (!o || !o.ink || !o.ink.length) return;
   const cr = cv.getBoundingClientRect(), rects = new Map();
   const fs = parseFloat(getComputedStyle($('#score')).fontSize) || 30;
+  const bg = inkPref.adapt ? hlColor() : null;
   o.ink.forEach((st) => {
     const pts = inkToCanvas(st, cr, rects);
     if (!pts || !pts.length) return;
     const ys = pts.map((q) => q[1]);
     if (Math.max(...ys) < -20 || Math.min(...ys) > cv._h + 20) return; // 画面の外の線は、描かない
-    inkFull(ctx, pts, inkColorOf(st.c), Math.max(1.2, st.w * fs));
+    const onHl = bg && blocks[st.b] && blocks[st.b].el.classList.contains('cur'); // いま、ハイライトされている行の線だけ
+    inkFull(ctx, pts, onHl ? adaptInk(st.c, bg) : inkColorOf(st.c), Math.max(1.2, st.w * fs));
   });
 }
 function blockAtY(y, cr) { // キャンバス上のy座標に、いちばん近い行
@@ -3260,7 +3296,7 @@ function straighten(pts, force) {
     };
     flingRaf = requestAnimationFrame(step);
   };
-  const color = () => inkColorOf(inkPref.color);
+  const color = () => (drawing && drawing.color) || inkColorOf(inkPref.color);
   const eraseAt = async (x, y, cr) => {
     const o = liveOvForWrite();
     if (!o || !o.ink || !o.ink.length) return;
@@ -3284,6 +3320,7 @@ function straighten(pts, force) {
     const x = e.clientX - cr.left, y = e.clientY - cr.top;
     if (liveTool === 'erase' || (e.buttons & 32) !== 0) { drawing = { erase: true, cr }; eraseAt(x, y, cr); return; } // Sペンの消しゴムボタンでも消せる
     drawing = { pts: [[x, y]], cr, snapped: false };
+    if (inkPref.adapt && blocks[blockAtY(y, cr)] && blocks[blockAtY(y, cr)].el.classList.contains('cur')) drawing.color = adaptInk(inkPref.color, hlColor()); // ハイライトの行に書くときは、最初から、見やすい色で
     const ctx = sizeInk();
     inkStyle(ctx, color(), inkPref.width);
     ctx.beginPath(); ctx.arc(x, y, inkPref.width / 2, 0, Math.PI * 2); ctx.fill();
@@ -3366,12 +3403,14 @@ const syncInkUi = () => {
   $('#lvDot').style.setProperty('--w', inkPref.width + 'px');
   $('#lvDot').style.background = inkColorOf(inkPref.color);
   $('#lvStraight').classList.toggle('on', inkPref.straight);
+  $('#lvAdapt').classList.toggle('on', inkPref.adapt);
 };
 document.querySelectorAll('#liveBar [data-ink]').forEach((b) => {
   b.onclick = () => { inkPref.color = b.dataset.ink; saveInkPref(); syncInkUi(); if (liveTool !== 'pen') setLiveTool('pen'); };
 });
 $('#lvColor').oninput = () => { inkPref.color = $('#lvColor').value; saveInkPref(); syncInkUi(); if (liveTool !== 'pen') setLiveTool('pen'); };
 $('#lvWidth').oninput = () => { inkPref.width = Number($('#lvWidth').value); saveInkPref(); syncInkUi(); };
+$('#lvAdapt').onclick = () => { inkPref.adapt = !inkPref.adapt; saveInkPref(); syncInkUi(); queueInk(); toast(inkPref.adapt ? 'ハイライトに重なった線は、見やすい色にします' : 'ハイライトでも、選んだ色のままにします'); };
 $('#lvStraight').onclick = () => { inkPref.straight = !inkPref.straight; saveInkPref(); syncInkUi(); toast(inkPref.straight ? '直線補正: オン(ほぼ直線の線は直線に。書いたまま止めると、直線になります)' : '直線補正: オフ'); };
 syncInkUi();
 function closeLive() { if (liveTool) setLiveTool(liveTool); $('#liveBar').classList.add('hidden'); $('#btnLive').classList.remove('on'); }

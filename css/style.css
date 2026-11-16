@@ -778,3 +778,4 @@ dialog.wide { width: min(900px, 96vw); }
 #liveBar #lvDot { display: inline-block; width: var(--w, 4px); height: var(--w, 4px); min-width: 4px; min-height: 4px; border-radius: 50%; }
 #liveBar #lvWidthV { font-size: 12px; color: var(--dim); min-width: 3.2em; }
 #liveBar #lvStraight.on { background: var(--accent); color: var(--accent-fg); font-weight: 700; }
+#liveBar #lvAdapt.on { background: var(--accent); color: var(--accent-fg); font-weight: 700; }
