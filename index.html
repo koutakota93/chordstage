@@ -140,6 +140,7 @@
       <span class="acclab">送り</span><button id="stDown">−</button><span id="stLabel">1行</span><button id="stUp">＋</button>
     </div>
     <button id="btnMemoMode">メモ</button>
+    <button id="btnLive" class="hidden" title="このライブ専用の編集(手書き・省略)">ライブ編集</button>
     <button id="btnEdit" title="コード譜のデータを編集">編集</button>
     <button id="btnInfo">情報</button>
     <button id="btnRange" title="歌詞の色の区切りの表示/非表示">区切り</button>
@@ -151,6 +152,20 @@
   <div class="stage">
     <div id="score"></div>
     <nav id="minimap"></nav>
+    <div id="liveBar" class="hidden">
+      <b class="lvt">ライブ編集</b>
+      <button data-tool="pen" title="Sペン(ペン先)で書く。指は、画面のスクロール">✏ 手書き</button>
+      <button data-tool="erase" title="なぞった線を消す(Sペンの消しゴムボタンでも消せる)">消しゴム</button>
+      <span class="lvsw"><button data-ink="fg" class="on" style="--c:var(--fg)" title="文字の色"></button><button data-ink="red" style="--c:#ef4444"></button><button data-ink="blue" style="--c:#3b82f6"></button><button data-ink="green" style="--c:#22c55e"></button></span>
+      <span class="lvsz"><button data-size="1">細</button><button data-size="2" class="on">中</button><button data-size="3">太</button></span>
+      <button id="lvUndo">↶ 1本戻す</button>
+      <button id="lvClear">手書きを全消去</button>
+      <span class="lvsep"></span>
+      <button data-tool="skipLine" title="タップした行を省略(次へで飛ばす)">行を省略</button>
+      <button data-tool="skipBar" title="タップした小節を省略(自動モードで飛ばす)">小節を省略</button>
+      <button id="lvRestore">省略をすべて復元</button>
+      <button id="lvClose">閉じる</button>
+    </div>
     <button id="fab" class="hidden" aria-label="再生・停止"><span class="fi">▶</span><span class="fl">開始</span></button>
   </div>
   <footer class="ctl">

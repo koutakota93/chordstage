@@ -1958,7 +1958,7 @@ async function openSong(id, ctx = null) {
   played = false;
   setMode(false); // 曲を開いたときは、手動モード(標準)
   setFab(false);
-  setPos(0, { scroll: false });
+  setPos(firstActive(), { scroll: false });
   $('#score').scrollTop = 0;
   keepAwake();
   // ブラウザ/端末の「戻る」で一覧に戻れるよう、履歴に積む
@@ -1981,6 +1981,8 @@ function renderPlayer() {
   $('#prevSong').classList.toggle('hidden', !(set && idx > 0));
   $('#nextSong').classList.toggle('hidden', !(set && idx >= 0 && idx < order.length - 1));
   if (set && idx >= 0) $('#pMeta').textContent = '【' + set.name + ' ' + (idx + 1) + '/' + order.length + '】 ' + $('#pMeta').textContent;
+  $('#btnLive').classList.toggle('hidden', !set);
+  if (!set && liveTool !== null) closeLive();
   renderScore();
 }
 
@@ -2154,7 +2156,9 @@ function renderScore() {
     b.onclick = () => jumpTo(Number(h.dataset.block));
     mini.append(b);
   });
+  applySkipClasses();
   refit();
+  setupInk();
 }
 
 // 曲中のテンポ変化: 譜面に書かれたテンポ(blk.tempo)から先は、そのテンポで自動モードを進める。
@@ -2173,14 +2177,25 @@ function lineTL(i) {
   if (!b._tl || b._tlFor !== settings.beatsPerChord) { b._tl = lineTimeline(b.ln, b.meter0, settings.beatsPerChord).beats; b._tlFor = settings.beatsPerChord; }
   return b._tl;
 }
-const unitsOf = (beats) => Math.max(1, Math.round(beats * 4));
+const unitsOf = (beats) => (beats === 0 ? 0 : Math.max(1, Math.round(beats * 4))); // 省略した小節のコードは、0(演奏の時間に入れない)
+// 演奏(自動モード)用の時間割り: 省略した小節のコードは、0拍にして、飛ばす(表示の幅は、lineTL のまま)
+function playTL(i) {
+  const base = lineTL(i);
+  const sk = skipSets();
+  if (!sk.bars.size) return base;
+  const out = [...base];
+  let k = 0;
+  blocks[i].el.querySelectorAll('.cell').forEach((c, ci) => c._it.forEach((it) => { if (it.rng) { if (sk.bars.has(i + ':' + ci)) out[k] = 0; k++; } }));
+  return out;
+}
 function lineUnits(i) {
-  const u = lineTL(i).reduce((sum, x) => sum + unitsOf(x), 0);
-  return u || Math.round(blocks[i].meter0 * 4);
+  const tl = playTL(i);
+  const u = tl.reduce((sum, x) => sum + unitsOf(x), 0);
+  return u || (tl.length ? 0 : Math.round(blocks[i].meter0 * 4));
 }
 function chordAt(i, unit) {
   let acc = 0;
-  const tl = lineTL(i);
+  const tl = playTL(i);
   for (let k = 0; k < tl.length; k++) {
     const len = unitsOf(tl[k]);
     if (unit < acc + len) return { k, start: acc, len };
@@ -2188,29 +2203,42 @@ function chordAt(i, unit) {
   }
   return null;
 }
-// ハイライトする範囲: 現在行から「まとめ行数」分(セクションをまたぐ)。次へ進むと1行ずつずれる
-function windowEnd(i) {
+// ライブ編集(セットリスト専用): 省略した行・小節。セットリストの、その曲の設定(overrides)に入れる
+const skipSets = () => {
+  const o = playOv();
+  return { lines: new Set((o && o.skipLines) || []), bars: new Set((o && o.skipBars) || []) };
+};
+const lineSkipped = (i) => skipSets().lines.has(i);
+const activeAfter = (i) => { const sk = skipSets(); for (let j = i + 1; j < blocks.length; j++) if (!sk.lines.has(j)) return j; return -1; };
+const activeBefore = (i) => { const sk = skipSets(); for (let j = i - 1; j >= 0; j--) if (!sk.lines.has(j)) return j; return -1; };
+const firstActive = () => { const sk = skipSets(); for (let j = 0; j < blocks.length; j++) if (!sk.lines.has(j)) return j; return 0; };
+// ハイライトする範囲: 現在行から「まとめ行数」分(セクションをまたぐ。省略した行は、数えない)。次へ進むと1行ずつずれる
+function windowLines(i) {
   const n = Math.max(1, cur.groupLines || DEFAULT_GROUP);
-  let e = i;
-  while (e + 1 < blocks.length && e + 1 < i + n) e++; // セクションをまたいでも、まとめ行数ぶん反映する
-  return e;
+  const sk = skipSets();
+  const set = new Set([i]);
+  let last = i;
+  for (let j = i + 1; j < blocks.length && set.size < n; j++) if (!sk.lines.has(j)) { set.add(j); last = j; }
+  return { set, last };
 }
+const windowEnd = (i) => windowLines(i).last;
 
 function setPos(i, { scroll = true } = {}) {
   if (!blocks.length) { pos = 0; return; }
   pos = Math.max(0, Math.min(blocks.length - 1, i));
   clearNow();
   showBpm();
-  const end = windowEnd(pos);
+  const { set: curLines, last: end } = windowLines(pos);
+  const nxt = activeAfter(end);
   blocks.forEach((b, bi) => {
-    b.el.classList.toggle('cur', bi >= pos && bi <= end);
-    b.el.classList.toggle('nxt', bi === end + 1);
+    b.el.classList.toggle('cur', curLines.has(bi));
+    b.el.classList.toggle('nxt', bi === nxt);
     b.el.classList.toggle('past', bi < pos);
   });
   document.querySelectorAll('#minimap button').forEach((b) => b.classList.toggle('on', Number(b.dataset.s) === blocks[pos].s));
   document.querySelectorAll('.memo').forEach((m) => {
     const g = Number(m.dataset.g);
-    m.classList.toggle('soon', g >= pos && g <= end + 2);
+    m.classList.toggle('soon', g >= pos && g <= end + 2 && !skipSets().lines.has(g));
   });
   if (scroll) {
     const score = $('#score');
@@ -2241,7 +2269,9 @@ $('#nextSong').onclick = () => gotoSong(1);
 let armNext = false;
 const stepOf = () => Math.max(1, Math.min(8, (cur && cur.stepLines) || 1));
 const next = () => {
-  if (pos < blocks.length - 1) return jumpTo(Math.min(blocks.length - 1, pos + stepOf()));
+  let tgt = pos;
+  for (let k = 0; k < stepOf(); k++) { const j = activeAfter(tgt); if (j < 0) break; tgt = j; } // 省略した行は、数えずに進む
+  if (tgt !== pos) return jumpTo(tgt);
   const t = setNeighbor(1);
   if (!t) return toast('最後です');
   if (armNext) { armNext = false; return gotoSong(1); }
@@ -2249,7 +2279,11 @@ const next = () => {
   toast('最後です。もう一度「次」で次の曲へ: ' + t.title);
   setTimeout(() => { armNext = false; }, 4000);
 };
-const prev = () => jumpTo(Math.max(0, pos - stepOf()));
+const prev = () => {
+  let t = pos;
+  for (let k = 0; k < stepOf(); k++) { const j = activeBefore(t); if (j < 0) break; t = j; }
+  jumpTo(t);
+};
 function setStep(n) {
   n = Math.max(1, Math.min(8, n));
   cur.stepLines = n;
@@ -2288,6 +2322,7 @@ function hitsNowChord(e) {
   return rs.some((r) => e.clientX >= r.left - m && e.clientX <= r.right + m && e.clientY >= r.top - m && e.clientY <= r.bottom + m);
 }
 $('#score').addEventListener('click', (e) => {
+  if (liveTool === 'skipLine' || liveTool === 'skipBar') return liveSkipTap(e); // ライブ編集: 省略する行・小節を、タップで選ぶ
   if (memoMode || !settings.tapJump) return;
   const sech = e.target.closest('.sech');
   if (sech) return jumpTo(Number(sech.dataset.block));
@@ -2295,9 +2330,10 @@ $('#score').addEventListener('click', (e) => {
   const target = e.target.closest('.blk');
   if (!target) return;
   const i = Number(target.dataset.block);
+  if (lineSkipped(i)) return; // 省略した行には、移動しない
   const k = chordAtPoint(e, blocks[i]);
   if (!autoMode || k < 0) return jumpTo(i);
-  const tl = lineTL(i);
+  const tl = playTL(i);
   let start = 0;
   for (let j = 0; j < k; j++) start += unitsOf(tl[j]);
   if (autoOn) { setPos(i); unitIdx = start; unitsLeft = lineUnits(i) - start; nextAt = performance.now(); clearTimeout(tickTimer); tick(); }
@@ -2350,6 +2386,7 @@ function layoutCells() {
       d.it.rng.style.width = Math.max(2, next - d.x - 3) + 'px';
     }
   }));
+  queueInk();
 }
 
 // 文字サイズ(=1行に入る量)をその場で調整する。
@@ -2554,9 +2591,10 @@ function tick() {
   $('#btnPlay').textContent = '■ 停止';
   setFab(true);
   if (unitsLeft <= 0) {
-    if (pos >= blocks.length - 1) { stopAuto(); toast('最後まで進みました'); return; }
+    const nj = activeAfter(pos);
+    if (nj < 0) { stopAuto(); toast('最後まで進みました'); return; }
     const before = effBpm(pos);
-    setPos(pos + 1);
+    setPos(nj);
     unitIdx = 0;
     unitsLeft = lineUnits(pos);
     if (effBpm(pos) !== before) toast('テンポ変更: ♩=' + before + ' → ' + effBpm(pos));
@@ -2572,6 +2610,7 @@ function tick() {
 }
 function startAuto(startUnit = 0) {
   if (autoOn || !blocks.length) return;
+  if (lineSkipped(pos)) { const j = activeAfter(pos); if (j >= 0) { setPos(j); startUnit = 0; } }
   autoOn = true;
   played = true;
   unitIdx = startUnit;
@@ -3022,6 +3061,230 @@ $('#btnDiag').onclick = async () => {
   out.textContent = L.join('\n');
 };
 updateInstallUi();
+
+// ---------- ライブ編集(セットリスト専用) ----------
+// セットリストから開いた曲に、そのライブだけの編集を入れる: Sペンの手書き / 行・小節の省略(復元もできる)。
+// 内容は、セットリストの、その曲の設定(overrides)に入る(曲本体は変わらない。同期の対象)
+let liveTool = null;           // 'pen' | 'erase' | 'skipLine' | 'skipBar' | null
+let inkColor = 'fg';
+let inkSize = 2;               // 1〜3(太さ)
+const INK_COLORS = { fg: null, red: '#ef4444', blue: '#3b82f6', green: '#22c55e' };
+const inkPx = () => [0, 2, 3.5, 6][inkSize];
+async function saveLive(o) {
+  const set = playSet();
+  if (!set) return;
+  set.overrides = set.overrides || {};
+  set.overrides[cur.id] = o;
+  await saveSet(set);
+  applySkipClasses();
+  queueInk();
+}
+const liveOvForWrite = () => { const set = playSet(); return set ? { ...(playOv() || {}) } : null; };
+
+function applySkipClasses() {
+  const sk = skipSets();
+  blocks.forEach((b, i) => {
+    b.el.classList.toggle('skipped', sk.lines.has(i));
+    b.el.querySelectorAll('.cell').forEach((c, ci) => c.classList.toggle('skipbar', sk.bars.has(i + ':' + ci)));
+  });
+  const n = sk.lines.size + sk.bars.size;
+  $('#lvRestore').textContent = n ? `省略をすべて復元(${n})` : '省略をすべて復元';
+  $('#lvRestore').disabled = !n;
+}
+async function liveSkipTap(e) {
+  const blk = e.target.closest('.blk');
+  if (!blk) return;
+  const i = Number(blk.dataset.block);
+  const o = liveOvForWrite();
+  if (!o) return;
+  if (liveTool === 'skipLine') {
+    const set = new Set(o.skipLines || []);
+    if (set.has(i)) set.delete(i); else set.add(i);
+    o.skipLines = [...set].sort((a, b) => a - b);
+  } else {
+    const cell = e.target.closest('.cell');
+    if (!cell) return;
+    const ci = [...blk.querySelectorAll('.cell')].indexOf(cell);
+    const key = i + ':' + ci;
+    const set = new Set(o.skipBars || []);
+    if (set.has(key)) set.delete(key); else set.add(key);
+    o.skipBars = [...set];
+  }
+  const keep = pos;
+  await saveLive(o);
+  if (lineSkipped(keep)) { const j = activeAfter(keep); setPos(j >= 0 ? j : activeBefore(keep) >= 0 ? activeBefore(keep) : keep, { scroll: false }); } else setPos(keep, { scroll: false });
+}
+$('#lvRestore').onclick = async () => {
+  const o = liveOvForWrite();
+  if (!o) return;
+  o.skipLines = []; o.skipBars = [];
+  await saveLive(o);
+  setPos(pos, { scroll: false });
+  toast('省略を、すべて復元しました');
+};
+
+// ---- 手書き ----
+let inkQueued = 0;
+function queueInk() { if (inkQueued) return; inkQueued = requestAnimationFrame(() => { inkQueued = 0; redrawInk(); }); }
+function inkCv() { return document.getElementById('inkCv'); }
+function setupInk() {
+  const score = $('#score');
+  let cv = inkCv();
+  if (!cv) { cv = el('canvas'); cv.id = 'inkCv'; }
+  score.append(cv); // renderScore が、譜面を作り直すので、そのたびに付け直す
+  cv.classList.toggle('on', liveTool === 'pen' || liveTool === 'erase');
+  queueInk();
+}
+function sizeInk() {
+  const cv = inkCv(), score = $('#score');
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = score.scrollWidth, h = score.scrollHeight;
+  if (cv._w !== w || cv._h !== h || cv._d !== dpr) {
+    cv.style.width = w + 'px'; cv.style.height = h + 'px';
+    cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+    cv._w = w; cv._h = h; cv._d = dpr;
+  }
+  return dpr;
+}
+const inkStroke = (ctx, pts, color, w) => {
+  ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = w; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  if (pts.length === 1) { ctx.beginPath(); ctx.arc(pts[0][0], pts[0][1], w / 2, 0, Math.PI * 2); ctx.fill(); return; }
+  ctx.beginPath();
+  ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let k = 1; k < pts.length - 1; k++) { const mx = (pts[k][0] + pts[k + 1][0]) / 2, my = (pts[k][1] + pts[k + 1][1]) / 2; ctx.quadraticCurveTo(pts[k][0], pts[k][1], mx, my); }
+  const l = pts[pts.length - 1];
+  ctx.lineTo(l[0], l[1]);
+  ctx.stroke();
+};
+const inkColorOf = (c) => (c === 'fg' || !INK_COLORS[c] ? getComputedStyle(document.documentElement).getPropertyValue('--fg').trim() || '#fff' : INK_COLORS[c]);
+// 保存した線(行ごとの、相対位置)を、いまの画面の位置・大きさに合わせて、キャンバス上の座標にする
+function inkToCanvas(st) {
+  const cv = inkCv(), blk = blocks[st.b];
+  if (!cv || !blk) return null;
+  const r = blk.el.getBoundingClientRect(), cr = cv.getBoundingClientRect();
+  return st.p.map(([x, y]) => [r.left - cr.left + x * r.width, r.top - cr.top + y * r.height]);
+}
+function redrawInk() {
+  const cv = inkCv();
+  if (!cv || !cur) return;
+  const dpr = sizeInk();
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cv._w, cv._h);
+  const o = playOv();
+  const fs = parseFloat(getComputedStyle($('#score')).fontSize) || 30;
+  ((o && o.ink) || []).forEach((st) => {
+    const pts = inkToCanvas(st);
+    if (pts && pts.length) inkStroke(ctx, pts, inkColorOf(st.c), Math.max(1.2, st.w * fs));
+  });
+}
+function blockAtY(y) { // キャンバス上のy座標に、いちばん近い行
+  const cr = inkCv().getBoundingClientRect();
+  let best = 0, bd = Infinity;
+  blocks.forEach((b, i) => {
+    const r = b.el.getBoundingClientRect();
+    const top = r.top - cr.top, bottom = r.bottom - cr.top;
+    const d = y >= top && y <= bottom ? 0 : Math.min(Math.abs(y - top), Math.abs(y - bottom));
+    if (d < bd) { bd = d; best = i; }
+  });
+  return best;
+}
+(() => {
+  let drawing = null, touchY = 0, touchId = null, erasing = false;
+  const local = (e) => { const r = inkCv().getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  const eraseAt = async (x, y) => {
+    const o = liveOvForWrite();
+    if (!o || !o.ink || !o.ink.length) return;
+    const keep = o.ink.filter((st) => {
+      const pts = inkToCanvas(st);
+      return !(pts && pts.some(([px, py]) => Math.hypot(px - x, py - y) < 16));
+    });
+    if (keep.length !== o.ink.length) { o.ink = keep; await saveLive(o); }
+  };
+  document.addEventListener('pointerdown', (e) => {
+    const cv = inkCv();
+    if (!cv || e.target !== cv || !(liveTool === 'pen' || liveTool === 'erase')) return;
+    e.preventDefault();
+    try { cv.setPointerCapture(e.pointerId); } catch {}
+    if (e.pointerType === 'touch') { touchY = e.clientY; touchId = e.pointerId; return; } // 指は、画面のスクロール(ペンだけが、書く)
+    erasing = liveTool === 'erase' || (e.buttons & 32) !== 0; // Sペンの消しゴム(ボタン)でも消せる
+    const [x, y] = local(e);
+    if (erasing) { drawing = { erase: true }; eraseAt(x, y); return; }
+    drawing = { pts: [[x, y]] };
+    const ctx = cv.getContext('2d'); const dpr = cv._d || 1; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    inkStroke(ctx, drawing.pts, inkColorOf(inkColor), inkPx());
+  }, { passive: false });
+  document.addEventListener('pointermove', (e) => {
+    const cv = inkCv();
+    if (!cv) return;
+    if (touchId === e.pointerId && e.pointerType === 'touch') { $('#score').scrollTop -= e.clientY - touchY; touchY = e.clientY; return; }
+    if (!drawing) return;
+    const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+    for (const ev of (evs.length ? evs : [e])) {
+      const [x, y] = local(ev);
+      if (drawing.erase) { eraseAt(x, y); continue; }
+      const last = drawing.pts[drawing.pts.length - 1];
+      if (Math.hypot(x - last[0], y - last[1]) < 1.2) continue;
+      drawing.pts.push([x, y]);
+      const ctx = cv.getContext('2d');
+      inkStroke(ctx, drawing.pts.slice(-3), inkColorOf(inkColor), inkPx());
+    }
+  });
+  const end = async (e) => {
+    if (touchId === e.pointerId) { touchId = null; return; }
+    if (!drawing) return;
+    const d = drawing;
+    drawing = null;
+    if (d.erase || !d.pts) return;
+    const b = blockAtY(d.pts[0][1]);
+    const r = blocks[b].el.getBoundingClientRect(), cr = inkCv().getBoundingClientRect();
+    const fs = parseFloat(getComputedStyle($('#score')).fontSize) || 30;
+    const o = liveOvForWrite();
+    if (!o) return;
+    o.ink = [...(o.ink || []), {
+      b, c: inkColor, w: +(inkPx() / fs).toFixed(4),
+      p: d.pts.map(([x, y]) => [+((x - (r.left - cr.left)) / r.width).toFixed(4), +((y - (r.top - cr.top)) / r.height).toFixed(4)]),
+    }];
+    await saveLive(o);
+  };
+  document.addEventListener('pointerup', end);
+  document.addEventListener('pointercancel', end);
+})();
+$('#lvUndo').onclick = async () => { const o = liveOvForWrite(); if (!o || !(o.ink || []).length) return; o.ink = o.ink.slice(0, -1); await saveLive(o); };
+$('#lvClear').onclick = async () => {
+  const o = liveOvForWrite();
+  if (!o || !(o.ink || []).length) return toast('手書きは、まだありません');
+  if (!confirm('この曲の手書きを、すべて消します(ほかの曲・曲本体は、そのまま)')) return;
+  o.ink = [];
+  await saveLive(o);
+};
+
+// ---- ツールバー ----
+function setLiveTool(t) {
+  liveTool = liveTool === t ? null : t;
+  document.querySelectorAll('#liveBar [data-tool]').forEach((b) => b.classList.toggle('on', b.dataset.tool === liveTool));
+  const cv = inkCv();
+  if (cv) cv.classList.toggle('on', liveTool === 'pen' || liveTool === 'erase');
+  $('#score').classList.toggle('live-skip', liveTool === 'skipLine' || liveTool === 'skipBar');
+  $('#score').classList.toggle('live-ink', liveTool === 'pen' || liveTool === 'erase');
+  if (liveTool === 'skipLine') toast('省略したい行を、タップしてください(もう一度タップで、復元)');
+  if (liveTool === 'skipBar') toast('省略したい小節を、タップしてください(もう一度タップで、復元)');
+}
+document.querySelectorAll('#liveBar [data-tool]').forEach((b) => { b.onclick = () => setLiveTool(b.dataset.tool); });
+document.querySelectorAll('#liveBar [data-ink]').forEach((b) => {
+  b.onclick = () => { inkColor = b.dataset.ink; document.querySelectorAll('#liveBar [data-ink]').forEach((x) => x.classList.toggle('on', x === b)); if (liveTool !== 'pen') setLiveTool('pen'); };
+});
+document.querySelectorAll('#liveBar [data-size]').forEach((b) => {
+  b.onclick = () => { inkSize = Number(b.dataset.size); document.querySelectorAll('#liveBar [data-size]').forEach((x) => x.classList.toggle('on', x === b)); };
+});
+function closeLive() { if (liveTool) setLiveTool(liveTool); $('#liveBar').classList.add('hidden'); $('#btnLive').classList.remove('on'); }
+$('#btnLive').onclick = () => {
+  const open = $('#liveBar').classList.contains('hidden');
+  if (!open) return closeLive();
+  $('#liveBar').classList.remove('hidden');
+  $('#btnLive').classList.add('on');
+};
+$('#lvClose').onclick = closeLive;
 
 // ---------- コード譜の編集 ----------
 function updateEdInfo() {

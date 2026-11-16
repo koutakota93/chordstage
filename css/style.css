@@ -748,3 +748,25 @@ dialog.wide { width: min(900px, 96vw); }
 #svList.sorting li.settling { transition: transform .18s cubic-bezier(.2, .8, .2, 1), box-shadow .18s; z-index: 20; }
 #svList li .drag { width: 52px; min-width: 52px; border-radius: 10px; }
 #svList li .drag:active { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+
+/* ---- ライブ編集(セットリスト専用): 手書き・省略 ---- */
+#inkCv { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 4; }
+#inkCv.on { pointer-events: auto; touch-action: none; cursor: crosshair; }
+#score.live-ink .blk { cursor: crosshair; }
+#liveBar { position: absolute; z-index: 9; left: 10px; right: 150px; top: 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 10px;
+  background: color-mix(in srgb, var(--panel) 94%, transparent); border: 1px solid var(--line); border-radius: 16px; backdrop-filter: blur(10px); box-shadow: 0 8px 26px rgba(0,0,0,.35); }
+#liveBar.hidden { display: none; }
+#liveBar button { min-height: 40px; padding: 0 12px; font-size: 14px; }
+#liveBar .lvt { font-size: 13px; color: var(--accent); margin-right: 4px; }
+#liveBar .lvsep { width: 1px; height: 28px; background: var(--line); margin: 0 4px; }
+#liveBar .lvsw, #liveBar .lvsz { display: inline-flex; gap: 4px; }
+#liveBar .lvsw button { width: 36px; min-width: 36px; padding: 0; border-radius: 50%; background: var(--c); border: 3px solid transparent; }
+#liveBar .lvsw button.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--panel) inset; }
+#liveBar .lvsz button { min-width: 38px; padding: 0 8px; }
+#btnLive.on { background: var(--accent); color: var(--accent-fg); font-weight: 700; }
+/* 省略した行・小節: うすくして、斜めの線を重ねる(ステージでは、目に入っても、邪魔にならない) */
+.blk.skipped { opacity: .3 !important; background-image: repeating-linear-gradient(135deg, transparent 0 9px, color-mix(in srgb, var(--fg) 14%, transparent) 9px 11px); }
+.blk.skipped::after { content: '省略'; position: absolute; right: 10px; top: 6px; font-size: 12px; font-weight: 800; letter-spacing: .1em; color: var(--dim); }
+.blk.skipped.cur, .blk.skipped.nxt { background-color: transparent; box-shadow: none; }
+.cell.skipbar { opacity: .3; background-image: repeating-linear-gradient(135deg, transparent 0 7px, color-mix(in srgb, var(--fg) 20%, transparent) 7px 9px); border-radius: 8px; }
+#score.live-skip .blk { cursor: pointer; }
