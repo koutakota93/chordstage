@@ -2323,6 +2323,7 @@ function hitsNowChord(e) {
 }
 $('#score').addEventListener('click', (e) => {
   if (liveTool === 'skipLine' || liveTool === 'skipBar') return liveSkipTap(e); // ライブ編集: 省略する行・小節を、タップで選ぶ
+  if (liveTool === 'pen' || liveTool === 'erase') return; // 手書き中は、タップで行を移動しない
   if (memoMode || !settings.tapJump) return;
   const sech = e.target.closest('.sech');
   if (sech) return jumpTo(Number(sech.dataset.block));
@@ -3230,7 +3231,35 @@ function straighten(pts, force) {
   return [a, e];
 }
 (() => {
-  let drawing = null, touchY = 0, touchId = null, holdTimer = 0;
+  let drawing = null, touchId = null, holdTimer = 0, flingRaf = 0;
+  // 指でさわっているときは、自由にスクロールする(縦・横。指を離したあとは、勢いで、なめらかに止まる)
+  const scrollNow = (dx, dy) => $('#score').scrollBy({ left: dx, top: dy, behavior: 'instant' });
+  let tch = null;
+  const touchStart = (e) => { cancelAnimationFrame(flingRaf); tch = { x: e.clientX, y: e.clientY, t: performance.now(), vx: 0, vy: 0 }; };
+  const touchMove = (e) => {
+    if (!tch) return;
+    const now = performance.now(), dt = Math.max(1, now - tch.t);
+    const dx = e.clientX - tch.x, dy = e.clientY - tch.y;
+    scrollNow(-dx, -dy);
+    tch.vx = 0.8 * tch.vx + 0.2 * (-dx / dt); tch.vy = 0.8 * tch.vy + 0.2 * (-dy / dt);
+    tch.x = e.clientX; tch.y = e.clientY; tch.t = now;
+  };
+  const touchEnd = () => {
+    if (!tch) return;
+    let { vx, vy } = tch;
+    const lastMove = tch.t;
+    let last = performance.now();
+    tch = null;
+    if (last - lastMove > 120) return; // 止めてから離したときは、勢いをつけない
+    const step = (t) => {
+      const dt = Math.min(40, t - last); last = t;
+      scrollNow(vx * dt, vy * dt);
+      const k = Math.pow(0.94, dt / 16);
+      vx *= k; vy *= k;
+      if (Math.hypot(vx, vy) > 0.03) flingRaf = requestAnimationFrame(step);
+    };
+    flingRaf = requestAnimationFrame(step);
+  };
   const color = () => inkColorOf(inkPref.color);
   const eraseAt = async (x, y, cr) => {
     const o = liveOvForWrite();
@@ -3250,7 +3279,7 @@ function straighten(pts, force) {
     if (!cv || e.target !== cv || !(liveTool === 'pen' || liveTool === 'erase')) return;
     e.preventDefault();
     try { cv.setPointerCapture(e.pointerId); } catch {}
-    if (e.pointerType === 'touch') { touchY = e.clientY; touchId = e.pointerId; return; } // 指は、画面のスクロール(ペンだけが、書く)
+    if (e.pointerType === 'touch') { touchId = e.pointerId; touchStart(e); return; } // 指は、画面のスクロール(ペンだけが、書く)
     const cr = cv.getBoundingClientRect();
     const x = e.clientX - cr.left, y = e.clientY - cr.top;
     if (liveTool === 'erase' || (e.buttons & 32) !== 0) { drawing = { erase: true, cr }; eraseAt(x, y, cr); return; } // Sペンの消しゴムボタンでも消せる
@@ -3262,7 +3291,7 @@ function straighten(pts, force) {
   document.addEventListener('pointermove', (e) => {
     const cv = inkCv();
     if (!cv) return;
-    if (touchId === e.pointerId && e.pointerType === 'touch') { $('#score').scrollTop -= e.clientY - touchY; touchY = e.clientY; return; }
+    if (touchId === e.pointerId && e.pointerType === 'touch') { const list = e.getCoalescedEvents ? e.getCoalescedEvents() : []; touchMove(list.length ? list[list.length - 1] : e); return; }
     if (!drawing) return;
     const { cr } = drawing;
     const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
@@ -3283,7 +3312,7 @@ function straighten(pts, force) {
     holdTimer = setTimeout(() => { if (drawing && !drawing.erase) { drawing.snapped = true; preview(); } }, 500);
   });
   const end = async (e) => {
-    if (touchId === e.pointerId) { touchId = null; return; }
+    if (touchId === e.pointerId) { touchId = null; touchEnd(); return; }
     if (!drawing) return;
     clearTimeout(holdTimer);
     const d = drawing;
@@ -3351,6 +3380,7 @@ $('#btnLive').onclick = () => {
   if (!open) return closeLive();
   $('#liveBar').classList.remove('hidden');
   $('#btnLive').classList.add('on');
+  if (liveTool !== 'pen') setLiveTool('pen'); // ライブ編集に入ったら、手書きモードを、オンにしておく
 };
 $('#lvClose').onclick = closeLive;
 
