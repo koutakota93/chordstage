@@ -128,17 +128,17 @@
       <select id="keySel" aria-label="キー(移調)"></select>
     </div>
     <div class="group" id="accGroup" title="移調後のコードの表記(♯優先 / ♭優先)">
-      <span class="acclab">表記</span><button data-acc="auto">自動</button><button data-acc="sharp">♯</button><button data-acc="flat">♭</button>
+      <span class="gl">優先</span><div class="gr"><button data-acc="auto">自動</button><button data-acc="sharp">♯</button><button data-acc="flat">♭</button></div>
     </div>
     <div class="group fsgroup" title="文字サイズ(横幅にどれだけ入るか)">
       <button id="fsDown">A−</button><button id="btnAutoFit"></button><button id="fsUp">A＋</button>
     </div>
     <div class="group" title="一度にハイライトする行数">
-      <button id="grDown">−</button><span id="grLabel">1行</span><button id="grUp">＋</button>
+      <span class="gl">ハイライト</span><div class="gr"><button id="grDown">−</button><span id="grLabel">1行</span><button id="grUp">＋</button></div>
     </div>
     <button id="btnMemoMode" title="演奏メモの編集">メモ</button>
     <button id="btnLive" class="hidden" title="このライブ専用の編集(手書き・省略)"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20l1-4L16.5 4.5a2.1 2.1 0 013 3L8 19z"/></svg>ライブ</button>
-    <button id="btnEdit" title="コード譜のデータを編集">編集</button>
+    <button id="btnEdit" title="コード譜のデータを編集">コード編集</button>
     <button id="btnInfo" title="曲の情報" aria-label="情報"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8v.01"/></svg></button>
     <button id="btnRange" title="歌詞の色の区切りの表示/非表示">区切り</button>
     <button class="themebtn" aria-label="ライト/ダーク"></button>
@@ -289,6 +289,16 @@
     <div class="row"><label class="filebtn">ファイルから読む<input id="riFile" type="file" accept=".csv,.tsv,.txt,text/csv,text/plain,text/tab-separated-values" hidden></label></div>
     <p id="riInfo" class="hint"></p>
     <div class="row end"><button value="cancel">キャンセル</button><button type="button" id="riGo" class="primary" disabled>取り込む</button></div>
+  </form>
+</dialog>
+
+<dialog id="chordEditDlg">
+  <form method="dialog">
+    <h3>コードを直す</h3>
+    <p class="hint" id="ceWhere"></p>
+    <label>コード<input id="ceInput" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="例: Am7 / F#m / D/F#"></label>
+    <div class="chips" id="ceQuick"></div>
+    <div class="row end"><button type="button" id="ceDelete" class="danger">コードを消す</button><button value="cancel">キャンセル</button><button type="button" id="ceSave" class="primary">保存</button></div>
   </form>
 </dialog>
 

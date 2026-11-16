@@ -853,3 +853,28 @@ dialog.wide { width: min(900px, 96vw); }
   #player > .bar#playerBar #accGroup button[data-acc=auto] { width: 38px; min-width: 38px; }
   #player > .bar#playerBar #accGroup button[data-acc=sharp], #player > .bar#playerBar #accGroup button[data-acc=flat] { width: 30px; min-width: 30px; }
 }
+
+/* ヘッダーの小さな文字(優先・ハイライト) */
+.group .gl { font-size: 9.5px; line-height: 1; color: var(--dim); font-weight: 700; letter-spacing: .02em; white-space: nowrap; }
+.group .gr { display: flex; align-items: center; gap: 3px; }
+@media (min-width: 761px) {
+  #player > .bar#playerBar .group:has(.gl) { flex-direction: column; align-items: center; gap: 1px; justify-content: center; }
+  #player > .bar#playerBar .group:has(.gl) .gr button { min-height: 34px; }
+  #player > .bar#playerBar button { min-height: 38px; }
+  #player > .bar#playerBar #accGroup .acclab { display: none; }
+}
+@media (max-width: 760px) { .group:has(.gl) { flex-direction: column; align-items: center; } }
+#ceQuick { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
+#ceQuick button { min-height: 38px; padding: 0 12px; }
+#ceInput { font-size: 22px; font-weight: 800; letter-spacing: .02em; }
+@media (min-width: 761px) {
+  #player > .bar#playerBar { gap: 2px; padding: 4px 5px; }
+  #player > .bar#playerBar button { padding: 0 6px; min-width: 32px; font-size: 13.5px; }
+  #player > .bar#playerBar #btnLive svg { display: none; }
+  #player > .bar#playerBar .group .gr { gap: 2px; }
+  #player > .bar#playerBar #keySel { width: 92px; min-width: 92px; font-size: 13.5px; }
+  #player > .bar#playerBar #btnAutoFit { width: 56px; min-width: 56px; font-size: 12px; }
+  #player > .bar#playerBar #fsDown, #player > .bar#playerBar #fsUp { width: 32px; min-width: 32px; }
+  #player > .bar#playerBar #grLabel { min-width: 28px; font-size: 12.5px; }
+  #player > .bar#playerBar .title { max-width: 200px; }
+}

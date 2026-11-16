@@ -273,7 +273,7 @@ export function parseSong(text, meta = {}) {
     }
     if (/\[(?:[A-G]|N\.?C|\|)/.test(t)) {
       const segs = parseInline(raw.replace(/\s+$/, ''));
-      if (segs.length) push({ segs });
+      if (segs.length) push({ segs, src: i, bracket: true }); // src: 元のテキストの行番号(コードを、その場で直すときに使う)
       continue;
     }
     if (isChordLine(raw)) {

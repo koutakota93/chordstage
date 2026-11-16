@@ -1,4 +1,4 @@
-import { parseSong, transposeChord, lineLyric, lineTimeline, isRhythmOnly, cleanTitle } from './parser.js';
+import { parseSong, transposeChord, lineLyric, lineTimeline, isRhythmOnly, isChord, isBar, cleanTitle } from './parser.js';
 import * as db from './db.js';
 import { rinneToText } from './sites.js';
 import * as drive from './drive.js';
@@ -2502,7 +2502,7 @@ function buildKeySel(tr) {
   const sel = $('#keySel');
   const acc = cur.accidental || 'auto';
   sel.textContent = '';
-  for (let n = -5; n <= 6; n++) {
+  for (let n = 6; n >= -5; n--) { // +が上、-が下
     const name = cur.key ? transposeChord(cur.key, n, acc) : '';
     const label = n === 0 ? '原調' + (cur.key ? ' ' + transposeChord(cur.key, 0, acc) : '') : (name ? name + '  ' : '') + '(' + (n > 0 ? '+' : '') + n + ')';
     const o = el('option', '', label);
@@ -3376,6 +3376,11 @@ function recognizeShape(pts, force) {
   let drawing = null, touchId = null, holdTimer = 0, flingRaf = 0;
   // 指でさわっているときは、自由にスクロールする(縦・横。指を離したあとは、勢いで、なめらかに止まる)
   const scrollNow = (dx, dy) => $('#score').scrollBy({ left: dx, top: dy, behavior: 'instant' });
+  // 手書き中も、2本の指で、ピンチして、譜面を拡大・縮小できる(文字サイズを変える。手書きは、文字サイズに合わせて、付いてくる)
+  const touches = new Map();
+  let pinch = null, pinchRaf = 0;
+  const pinchDist = () => { const [a, b] = [...touches.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
+  const pinchApply = () => { pinchRaf = 0; if (pinch) manualFont(Math.max(MIN_FONT, Math.min(60, pinch.f0 * pinch.ratio))); };
   let tch = null;
   const touchStart = (e) => { cancelAnimationFrame(flingRaf); tch = { x: e.clientX, y: e.clientY, t: performance.now(), vx: 0, vy: 0 }; };
   const touchMove = (e) => {
@@ -3446,7 +3451,11 @@ function recognizeShape(pts, force) {
     if (!cv || e.target !== cv || !inkToolOn()) return;
     e.preventDefault();
     try { cv.setPointerCapture(e.pointerId); } catch {}
-    if (e.pointerType === 'touch') { touchId = e.pointerId; touchStart(e); return; } // 指は、画面のスクロール(ペンだけが、書く)
+    if (e.pointerType === 'touch') {
+      touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (touches.size >= 2) { tch = null; pinch = { d0: pinchDist() || 1, f0: curFs(), ratio: 1 }; touchId = null; return; } // 2本目の指: ピンチ
+      touchId = e.pointerId; touchStart(e); return; // 指は、画面のスクロール(ペンだけが、書く)
+    }
     const cr = cv.getBoundingClientRect();
     const x = e.clientX - cr.left, y = e.clientY - cr.top;
     if (liveTool === 'erase') { drawing = { erase: true, cr }; eraseAt(x, y, cr); return; }
@@ -3462,6 +3471,10 @@ function recognizeShape(pts, force) {
   document.addEventListener('pointermove', (e) => {
     const cv = inkCv();
     if (!cv) return;
+    if (e.pointerType === 'touch' && touches.has(e.pointerId)) {
+      touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pinch && touches.size >= 2) { pinch.ratio = pinchDist() / pinch.d0; if (!pinchRaf) pinchRaf = setTimeout(pinchApply, 30); return; }
+    }
     if (touchId === e.pointerId && e.pointerType === 'touch') { const list = e.getCoalescedEvents ? e.getCoalescedEvents() : []; touchMove(list.length ? list[list.length - 1] : e); return; }
     if (!drawing) return;
     const { cr } = drawing;
@@ -3485,6 +3498,10 @@ function recognizeShape(pts, force) {
     holdTimer = setTimeout(() => { if (drawing && drawing.pts) { drawing.snapped = true; preview(); } }, 500);
   });
   const end = async (e) => {
+    if (e.pointerType === 'touch') {
+      touches.delete(e.pointerId);
+      if (pinch) { if (touches.size < 2) pinch = null; touchId = null; return; }
+    }
     if (touchId === e.pointerId) { touchId = null; touchEnd(); return; }
     if (!drawing) return;
     clearTimeout(holdTimer);
@@ -3620,6 +3637,91 @@ $('#btnLive').onclick = () => {
   $('#btnLive').classList.add('on');
   if (liveTool !== 'pen') setLiveTool('pen'); // ライブ編集に入ったら、手書きモードを、オンにしておく
 };
+
+// ---------- コードのその場編集(コードをダブルタップ) ----------
+// 光っているコードに限らず、コードの文字の上をダブルタップすると、そのコードを直せる。
+// 元のテキストの、同じ行の、同じ順番の [コード] を書き換える(コードの上下に歌詞を置く形式や、引き継いで付けたコードは、「コード編集」で直す)
+function chordLabelAt(e) {
+  const blkEl = e.target.closest && e.target.closest('.blk');
+  if (!blkEl) return null;
+  const i = Number(blkEl.dataset.block);
+  const b = blocks[i];
+  let best = null, bd = Infinity;
+  b.chordEls.forEach((c, k) => {
+    const r = c.getBoundingClientRect();
+    const m = 12;
+    if (e.clientX < r.left - m || e.clientX > r.right + m || e.clientY < r.top - m || e.clientY > r.bottom + m) return;
+    const d = Math.hypot(e.clientX - (r.left + r.right) / 2, e.clientY - (r.top + r.bottom) / 2);
+    if (d < bd) { bd = d; best = { i, k }; }
+  });
+  return best;
+}
+let chordEditCtx = null;
+function openChordEdit(i, k) {
+  const b = blocks[i];
+  const ln = b.ln;
+  const chordSegs = ln.segs.filter((g) => g.chord);
+  const seg = chordSegs[k];
+  if (!seg) return;
+  if (!ln.bracket || ln.src == null || seg.inherited) return toast('この形式のコードは、ここでは直せません。「コード編集」で直してください');
+  const nth = chordSegs.slice(0, k).filter((g) => !g.inherited).length; // この行の、元のテキストの中で、何番目のコードか
+  chordEditCtx = { src: ln.src, nth, orig: seg.chord };
+  $('#ceInput').value = seg.chord;
+  $('#ceWhere').textContent = `元のコード: ${seg.chord}`;
+  const q = $('#ceQuick');
+  q.textContent = '';
+  ['m', '7', 'm7', 'M7', 'sus4', 'add9', 'dim', 'aug', '/'].forEach((t) => {
+    const x = el('button', '', t);
+    x.type = 'button';
+    x.onclick = () => { const inp = $('#ceInput'); inp.value += t; inp.focus(); };
+    q.append(x);
+  });
+  $('#chordEditDlg').showModal();
+  setTimeout(() => { $('#ceInput').focus(); $('#ceInput').select(); }, 50);
+}
+function chordTokenRange(lineText, nth) { // 行の中の、nth 番目の「コード」の [ ] の位置
+  const re = /\[([^\]]+)\]/g;
+  let m, n = 0;
+  while ((m = re.exec(lineText))) {
+    const tok = m[1].trim();
+    if (isBar(tok) || !isChord(tok)) continue; // 小節線や、リズム表記は、数えない
+    if (n === nth) return { from: m.index, to: m.index + m[0].length, tok };
+    n++;
+  }
+  return null;
+}
+async function applyChordEdit(newChord) {
+  const c = chordEditCtx;
+  if (!c) return;
+  const lines = cur.raw.replace(/\r/g, '').split('\n');
+  const r = chordTokenRange(lines[c.src] || '', c.nth);
+  if (!r) return toast('元のテキストの、コードの位置が見つかりませんでした。「コード編集」で直してください');
+  lines[c.src] = lines[c.src].slice(0, r.from) + (newChord ? '[' + newChord + ']' : '') + lines[c.src].slice(r.to);
+  const keep = pos, wasAuto = autoMode;
+  cur.raw = lines.join('\n');
+  await persist();
+  $('#chordEditDlg').close();
+  await loadLibrary();
+  await openSong(cur.id, playCtx);
+  if (wasAuto) setMode(true);
+  setPos(keep, { scroll: false });
+  toast(newChord ? 'コードを直しました: ' + c.orig + ' → ' + newChord : 'コードを消しました');
+}
+$('#ceSave').onclick = () => {
+  const v = $('#ceInput').value.trim().replace(/^\[|\]$/g, '');
+  if (!v) return toast('コードを入力してください(消すときは「コードを消す」)');
+  if (!isChord(v)) return toast('コードとして読めません(例: Am7 / F#m / D/F#)');
+  applyChordEdit(v);
+};
+$('#ceDelete').onclick = () => { if (confirm('このコードを消します')) applyChordEdit(''); };
+$('#ceInput').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); $('#ceSave').click(); } });
+$('#score').addEventListener('dblclick', (e) => {
+  if (inkToolOn() || liveTool === 'skipLine' || liveTool === 'skipBar' || memoMode) return;
+  const hit = chordLabelAt(e);
+  if (!hit) return;
+  if (autoOn) stopAuto(); // 1回目・2回目のタップで、再生が動いていたら、止める
+  openChordEdit(hit.i, hit.k);
+});
 
 // ---------- コード譜の編集 ----------
 function updateEdInfo() {
