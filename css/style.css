@@ -779,3 +779,4 @@ dialog.wide { width: min(900px, 96vw); }
 #liveBar #lvWidthV { font-size: 12px; color: var(--dim); min-width: 3.2em; }
 #liveBar #lvStraight.on { background: var(--accent); color: var(--accent-fg); font-weight: 700; }
 #liveBar #lvAdapt.on { background: var(--accent); color: var(--accent-fg); font-weight: 700; }
+#liveBar #lvLasso { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; } #liveBar #lvLasso.hidden { display: none; } #liveBar #lvLasso .hint { font-size: 12px; margin: 0; }

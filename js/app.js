@@ -2324,7 +2324,7 @@ function hitsNowChord(e) {
 }
 $('#score').addEventListener('click', (e) => {
   if (liveTool === 'skipLine' || liveTool === 'skipBar') return liveSkipTap(e); // ライブ編集: 省略する行・小節を、タップで選ぶ
-  if (liveTool === 'pen' || liveTool === 'erase') return; // 手書き中は、タップで行を移動しない
+  if (liveTool === 'pen' || liveTool === 'lasso') return; // 手書き中は、タップで行を移動しない
   if (memoMode || !settings.tapJump) return;
   const sech = e.target.closest('.sech');
   if (sech) return jumpTo(Number(sech.dataset.block));
@@ -3140,7 +3140,7 @@ function setupInk() {
     $('#score').addEventListener('scroll', queueInk, { passive: true });
     window.addEventListener('resize', queueInk);
   }
-  cv.classList.toggle('on', liveTool === 'pen' || liveTool === 'erase');
+  cv.classList.toggle('on', liveTool === 'pen' || liveTool === 'lasso');
   queueInk();
 }
 function sizeInk() {
@@ -3213,31 +3213,77 @@ function inkLive(ctx, pts) { // 書いている最中は、最後の1区間だ�
   ctx.stroke();
 }
 // 保存した線(行ごとの、相対位置)を、いまの画面の位置・大きさに合わせて、キャンバス上の座標にする
-function inkToCanvas(st, cr, rects) {
+// 線は、「その行の左上からの、画面上の距離(px)」と、書いたときの文字サイズ(st.fs)で覚える。
+// 文字サイズが、書いたときと同じなら、ぴったり同じ場所に出る(ずれない)。文字サイズを変えたときは、その比率で、拡大・縮小して、行に付いてくる。
+// (古い形式の線は、行の幅・高さに対する割合で、これまでどおり表示する)
+const curFs = () => parseFloat(getComputedStyle($('#score')).fontSize) || 30;
+function inkToCanvas(st, cr, rects, fsNow = curFs()) {
   const blk = blocks[st.b];
   if (!blk) return null;
   let r = rects && rects.get(st.b);
   if (!r) { r = blk.el.getBoundingClientRect(); if (rects) rects.set(st.b, r); }
+  if (st.v === 2) {
+    const k = Math.abs(fsNow - st.fs) < 0.01 ? 1 : fsNow / st.fs;
+    return st.p.map(([x, y]) => [r.left - cr.left + x * k, r.top - cr.top + y * k]);
+  }
   return st.p.map(([x, y]) => [r.left - cr.left + x * r.width, r.top - cr.top + y * r.height]);
 }
+const inkId = () => 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+let lassoSel = new Set();      // 投げ縄で選んだ線(id)
+let lassoDrag = null;          // 選んだ線を動かしている最中の、ずれ(px)
+let lassoPath = null;          // 投げ縄で、なぞっている最中の線(キャンバス上の座標)
+let inkClip = null;            // コピーした線
+// 古い形式の線(行の幅・高さに対する割合)を、いまの見た目のまま、「行の左上からの距離(px)」の形式に、一度だけ変える(以後は、ずれない)
+function migrateInk(o, cr, fs) {
+  let changed = false;
+  const rects = new Map();
+  (o.ink || []).forEach((st) => {
+    if (!st.id) { st.id = inkId(); changed = true; }
+    if (st.v === 2) return;
+    const pts = inkToCanvas(st, cr, rects, fs);
+    const blk = blocks[st.b];
+    if (!pts || !blk) return;
+    const r = rects.get(st.b);
+    st.p = pts.map(([x, y]) => [+(x - (r.left - cr.left)).toFixed(2), +(y - (r.top - cr.top)).toFixed(2)]);
+    st.v = 2; st.fs = +fs.toFixed(3);
+    changed = true;
+  });
+  return changed;
+}
+const strokeBBox = (list) => {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  list.forEach((pts) => pts.forEach(([x, y]) => { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }));
+  return list.length ? { x0, y0, x1, y1 } : null;
+};
 function redrawInk() {
   const cv = inkCv();
   if (!cv || !cur) return;
   const ctx = sizeInk();
   ctx.clearRect(0, 0, cv._w, cv._h);
   const o = playOv();
-  if (!o || !o.ink || !o.ink.length) return;
   const cr = cv.getBoundingClientRect(), rects = new Map();
-  const fs = parseFloat(getComputedStyle($('#score')).fontSize) || 30;
+  const fs = curFs();
+  if (o && o.ink && o.ink.length && migrateInk(o, cr, fs)) saveLive({ ...o });
   const bg = inkPref.adapt ? hlColor() : null;
-  o.ink.forEach((st) => {
-    const pts = inkToCanvas(st, cr, rects);
+  const sel = [];
+  ((o && o.ink) || []).forEach((st) => {
+    let pts = inkToCanvas(st, cr, rects, fs);
     if (!pts || !pts.length) return;
+    const isSel = lassoSel.has(st.id);
+    if (isSel && lassoDrag) pts = pts.map(([x, y]) => [x + lassoDrag.dx, y + lassoDrag.dy]);
+    if (isSel) sel.push(pts);
     const ys = pts.map((q) => q[1]);
     if (Math.max(...ys) < -20 || Math.min(...ys) > cv._h + 20) return; // 画面の外の線は、描かない
+    const w = Math.max(1.2, st.w * fs);
+    if (isSel) inkFull(ctx, pts, 'rgba(245,158,11,.35)', w + 8); // 選んだ線は、まわりを光らせる
     const onHl = bg && blocks[st.b] && blocks[st.b].el.classList.contains('cur'); // いま、ハイライトされている行の線だけ
-    inkFull(ctx, pts, onHl ? adaptInk(st.c, bg) : inkColorOf(st.c), Math.max(1.2, st.w * fs));
+    inkFull(ctx, pts, onHl ? adaptInk(st.c, bg) : inkColorOf(st.c), w);
   });
+  const bb = strokeBBox(sel);
+  if (bb) { ctx.save(); ctx.setLineDash([6, 5]); ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 1.5; ctx.strokeRect(bb.x0 - 8, bb.y0 - 8, bb.x1 - bb.x0 + 16, bb.y1 - bb.y0 + 16); ctx.restore(); }
+  if (lassoPath && lassoPath.length > 1) { ctx.save(); ctx.setLineDash([7, 6]); ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 2; ctx.beginPath(); lassoPath.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.stroke(); ctx.restore(); }
+  const n = lassoSel.size;
+  document.querySelectorAll('#lvLasso button').forEach((b) => { b.disabled = b.id === 'lvPaste' ? !inkClip : !n; });
 }
 function blockAtY(y, cr) { // キャンバス上のy座標に、いちばん近い行
   let best = 0, bd = Infinity;
@@ -3297,33 +3343,62 @@ function straighten(pts, force) {
     flingRaf = requestAnimationFrame(step);
   };
   const color = () => (drawing && drawing.color) || inkColorOf(inkPref.color);
+  const inPoly = (poly, x, y) => { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const [xi, yi] = poly[i], [xj, yj] = poly[j]; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c; } return c; };
+  // 線を、キャンバス上の座標から、行の左上からの距離(px)の形にして、保存用の線にする(いちばん上の点がある行に付ける)
+  const anchor = (pts, color, wFrac, cr, id) => {
+    const b = blockAtY(pts[0][1], cr);
+    const r = blocks[b].el.getBoundingClientRect();
+    const fs = curFs();
+    return { id: id || inkId(), v: 2, b, c: color, fs: +fs.toFixed(3), w: wFrac, p: pts.map(([x, y]) => [+(x - (r.left - cr.left)).toFixed(2), +(y - (r.top - cr.top)).toFixed(2)]) };
+  };
   const eraseAt = async (x, y, cr) => {
     const o = liveOvForWrite();
     if (!o || !o.ink || !o.ink.length) return;
     const rects = new Map();
-    const keep = o.ink.filter((st) => { const pts = inkToCanvas(st, cr, rects); return !(pts && pts.some(([px, py]) => Math.hypot(px - x, py - y) < 16)); });
-    if (keep.length !== o.ink.length) { o.ink = keep; await saveLive(o); }
+    const fsNow = curFs();
+    const keep = o.ink.filter((st) => { const pts = inkToCanvas(st, cr, rects, fsNow); return !(pts && pts.some(([px, py]) => Math.hypot(px - x, py - y) < 16)); });
+    if (keep.length !== o.ink.length) { o.ink = keep; lassoSel = new Set([...lassoSel].filter((id) => keep.some((k) => k.id === id))); await saveLive(o); }
   };
   const preview = () => { // 直線補正: 止めたままにすると、直線に切り替わる(動かすと、直線の向きが変わる)
-    const cv = inkCv(), ctx = sizeInk();
+    const ctx = sizeInk();
     redrawInk();
-    const pts = straighten(drawing.pts, true);
-    inkFull(ctx, pts, color(), inkPref.width);
+    inkFull(ctx, straighten(drawing.pts, true), color(), inkPref.width);
+  };
+  const selectedCanvas = () => { // 選んだ線の、いまのキャンバス上の座標
+    const cv = inkCv(), o = playOv();
+    if (!cv || !o) return [];
+    const cr = cv.getBoundingClientRect(), rects = new Map(), fsNow = curFs();
+    return (o.ink || []).filter((st) => lassoSel.has(st.id)).map((st) => ({ st, pts: inkToCanvas(st, cr, rects, fsNow) })).filter((x) => x.pts);
+  };
+  // ペンのボタンを押している間だけ、消しゴム(ボタンを離すと、ペンに戻る)
+  const eraserHeld = (e) => (e.buttons & 34) !== 0; // 2: ペンの横のボタン(S Penのボタン)/ 右クリック、32: ペンの消しゴム側
+  const startPen = (x, y, cr) => {
+    drawing = { pts: [[x, y]], cr, snapped: false };
+    const blkIdx = blockAtY(y, cr);
+    drawing.b = blkIdx;
+    drawing.rect = blocks[blkIdx].el.getBoundingClientRect(); // 書き始めた時点の行の位置(あとで、この位置を基準に保存する)
+    if (inkPref.adapt && blocks[blkIdx].el.classList.contains('cur')) drawing.color = adaptInk(inkPref.color, hlColor()); // ハイライトの行に書くときは、最初から、見やすい色で
+    const ctx = sizeInk();
+    inkStyle(ctx, color(), inkPref.width);
+    ctx.beginPath(); ctx.arc(x, y, inkPref.width / 2, 0, Math.PI * 2); ctx.fill();
   };
   document.addEventListener('pointerdown', (e) => {
     const cv = inkCv();
-    if (!cv || e.target !== cv || !(liveTool === 'pen' || liveTool === 'erase')) return;
+    if (!cv || e.target !== cv || !(liveTool === 'pen' || liveTool === 'lasso')) return;
     e.preventDefault();
     try { cv.setPointerCapture(e.pointerId); } catch {}
     if (e.pointerType === 'touch') { touchId = e.pointerId; touchStart(e); return; } // 指は、画面のスクロール(ペンだけが、書く)
     const cr = cv.getBoundingClientRect();
     const x = e.clientX - cr.left, y = e.clientY - cr.top;
-    if (liveTool === 'erase' || (e.buttons & 32) !== 0) { drawing = { erase: true, cr }; eraseAt(x, y, cr); return; } // Sペンの消しゴムボタンでも消せる
-    drawing = { pts: [[x, y]], cr, snapped: false };
-    if (inkPref.adapt && blocks[blockAtY(y, cr)] && blocks[blockAtY(y, cr)].el.classList.contains('cur')) drawing.color = adaptInk(inkPref.color, hlColor()); // ハイライトの行に書くときは、最初から、見やすい色で
-    const ctx = sizeInk();
-    inkStyle(ctx, color(), inkPref.width);
-    ctx.beginPath(); ctx.arc(x, y, inkPref.width / 2, 0, Math.PI * 2); ctx.fill();
+    if (eraserHeld(e)) { drawing = { erase: true, cr }; eraseAt(x, y, cr); return; }
+    if (liveTool === 'lasso') {
+      const bb = strokeBBox(selectedCanvas().map((q) => q.pts));
+      if (bb && x >= bb.x0 - 12 && x <= bb.x1 + 12 && y >= bb.y0 - 12 && y <= bb.y1 + 12) { drawing = { move: true, cr, x0: x, y0: y }; lassoDrag = { dx: 0, dy: 0 }; return; } // 選んだ範囲の中から動かすと、移動
+      lassoSel = new Set(); lassoPath = [[x, y]]; drawing = { lasso: true, cr, pts: lassoPath };
+      queueInk();
+      return;
+    }
+    startPen(x, y, cr);
   }, { passive: false });
   document.addEventListener('pointermove', (e) => {
     const cv = inkCv();
@@ -3331,22 +3406,30 @@ function straighten(pts, force) {
     if (touchId === e.pointerId && e.pointerType === 'touch') { const list = e.getCoalescedEvents ? e.getCoalescedEvents() : []; touchMove(list.length ? list[list.length - 1] : e); return; }
     if (!drawing) return;
     const { cr } = drawing;
+    // 書いている途中で、ボタンを押したら、消しゴムに。離したら、ペンに戻る
+    if (!drawing.lasso && !drawing.move) {
+      const held = eraserHeld(e);
+      if (held && !drawing.erase) { drawing = { erase: true, cr }; clearTimeout(holdTimer); queueInk(); }
+      else if (!held && drawing.erase && liveTool === 'pen') { startPen(e.clientX - cr.left, e.clientY - cr.top, cr); return; }
+    }
     const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
     const list = evs.length ? evs : [e];
     const ctx = cv._ctx;
     for (const ev of list) {
       const x = ev.clientX - cr.left, y = ev.clientY - cr.top;
       if (drawing.erase) { eraseAt(x, y, cr); continue; }
+      if (drawing.move) { lassoDrag = { dx: x - drawing.x0, dy: y - drawing.y0 }; queueInk(); continue; }
+      if (drawing.lasso) { lassoPath.push([x, y]); queueInk(); continue; }
       const last = drawing.pts[drawing.pts.length - 1];
       if (Math.hypot(x - last[0], y - last[1]) < 0.8) continue;
       drawing.pts.push([x, y]);
       if (drawing.snapped) continue;
       inkLive(ctx, drawing.pts);
     }
-    if (drawing.erase || !inkPref.straight) return;
+    if (drawing.erase || drawing.move || drawing.lasso || !inkPref.straight) return;
     clearTimeout(holdTimer);
     if (drawing.snapped) { preview(); }
-    holdTimer = setTimeout(() => { if (drawing && !drawing.erase) { drawing.snapped = true; preview(); } }, 500);
+    holdTimer = setTimeout(() => { if (drawing && drawing.pts) { drawing.snapped = true; preview(); } }, 500);
   });
   const end = async (e) => {
     if (touchId === e.pointerId) { touchId = null; touchEnd(); return; }
@@ -3354,23 +3437,77 @@ function straighten(pts, force) {
     clearTimeout(holdTimer);
     const d = drawing;
     drawing = null;
-    if (d.erase || !d.pts) return;
+    if (d.erase) return;
+    if (d.lasso) { // 囲んだ範囲に、半分以上の点が入っている線を、選ぶ
+      const poly = lassoPath || [];
+      lassoPath = null;
+      lassoSel = new Set();
+      if (poly.length > 3) {
+        const cv = inkCv(), o = playOv(), cr = cv.getBoundingClientRect(), rects = new Map(), fsNow = curFs();
+        ((o && o.ink) || []).forEach((st) => {
+          const pts = inkToCanvas(st, cr, rects, fsNow);
+          if (pts && pts.filter(([x, y]) => inPoly(poly, x, y)).length >= Math.max(1, pts.length / 2)) lassoSel.add(st.id);
+        });
+        if (!lassoSel.size) toast('囲んだ範囲に、手書きがありません');
+      }
+      queueInk();
+      return;
+    }
+    if (d.move) { // 選んだ線を、離した場所に置く(置いた場所の行に付け直す)
+      const mv = lassoDrag;
+      lassoDrag = null;
+      if (!mv || (Math.abs(mv.dx) < 1 && Math.abs(mv.dy) < 1)) { queueInk(); return; }
+      const o = liveOvForWrite();
+      const cr = d.cr, items = selectedCanvas();
+      const map = new Map(items.map(({ st, pts }) => [st.id, anchor(pts.map(([x, y]) => [x + mv.dx, y + mv.dy]), st.c, st.w, cr, st.id)]));
+      o.ink = o.ink.map((st) => map.get(st.id) || st);
+      await saveLive(o);
+      return;
+    }
+    if (!d.pts) return;
     let pts = d.pts;
     if (inkPref.straight) pts = straighten(pts, d.snapped);
-    const b = blockAtY(pts[0][1], d.cr);
-    const r = blocks[b].el.getBoundingClientRect(), cr = d.cr;
-    const fs = parseFloat(getComputedStyle($('#score')).fontSize) || 30;
+    const fs = curFs();
     const o = liveOvForWrite();
     if (!o) return;
+    const r = d.rect, cr = d.cr; // 書き始めた時点の、行の位置を基準にする(スクロール中に書いても、ずれない)
     o.ink = [...(o.ink || []), {
-      b, c: inkPref.color, w: +(inkPref.width / fs).toFixed(4),
-      p: pts.map(([x, y]) => [+((x - (r.left - cr.left)) / r.width).toFixed(4), +((y - (r.top - cr.top)) / r.height).toFixed(4)]),
+      id: inkId(), v: 2, b: d.b, c: inkPref.color, fs: +fs.toFixed(3), w: +(inkPref.width / fs).toFixed(4),
+      p: pts.map(([x, y]) => [+(x - (r.left - cr.left)).toFixed(2), +(y - (r.top - cr.top)).toFixed(2)]), // 行の左上からの距離(px)
     }];
     queueInk(); // 先に、画面を更新してから、保存する(保存を待たずに、線が整う)
     await saveLive(o);
   };
   document.addEventListener('pointerup', end);
   document.addEventListener('pointercancel', end);
+  // 選んだ線の、コピー・貼り付け・削除
+  $('#lvCopy').onclick = () => {
+    const items = selectedCanvas();
+    if (!items.length) return;
+    const bb = strokeBBox(items.map((q) => q.pts));
+    inkClip = { fs: curFs(), items: items.map(({ st, pts }) => ({ c: st.c, w: st.w, pts: pts.map(([x, y]) => [x - bb.x0, y - bb.y0]) })), w: bb.x1 - bb.x0, h: bb.y1 - bb.y0 };
+    queueInk();
+    toast('コピーしました(「貼り付け」で、画面の中央に出ます。ほかの曲にも貼れます)');
+  };
+  $('#lvPaste').onclick = async () => {
+    if (!inkClip) return toast('コピーした線がありません');
+    const cv = inkCv(), o = liveOvForWrite();
+    if (!cv || !o) return;
+    const cr = cv.getBoundingClientRect(), k = curFs() / inkClip.fs;
+    const ox = cv._w / 2 - (inkClip.w * k) / 2, oy = cv._h / 2 - (inkClip.h * k) / 2;
+    const made = inkClip.items.map((it) => anchor(it.pts.map(([x, y]) => [ox + x * k, oy + y * k]), it.c, it.w, cr));
+    o.ink = [...(o.ink || []), ...made];
+    lassoSel = new Set(made.map((m) => m.id));
+    await saveLive(o);
+  };
+  $('#lvDel').onclick = async () => {
+    const o = liveOvForWrite();
+    if (!o || !lassoSel.size) return;
+    o.ink = (o.ink || []).filter((st) => !lassoSel.has(st.id));
+    lassoSel = new Set();
+    await saveLive(o);
+  };
+  $('#lvSelClear').onclick = () => { lassoSel = new Set(); queueInk(); };
 })();
 $('#lvUndo').onclick = async () => { const o = liveOvForWrite(); if (!o || !(o.ink || []).length) return; o.ink = o.ink.slice(0, -1); await saveLive(o); };
 $('#lvClear').onclick = async () => {
@@ -3386,9 +3523,11 @@ function setLiveTool(t) {
   liveTool = liveTool === t ? null : t;
   document.querySelectorAll('#liveBar [data-tool]').forEach((b) => b.classList.toggle('on', b.dataset.tool === liveTool));
   const cv = inkCv();
-  if (cv) cv.classList.toggle('on', liveTool === 'pen' || liveTool === 'erase');
+  if (cv) cv.classList.toggle('on', liveTool === 'pen' || liveTool === 'lasso');
   $('#score').classList.toggle('live-skip', liveTool === 'skipLine' || liveTool === 'skipBar');
-  $('#score').classList.toggle('live-ink', liveTool === 'pen' || liveTool === 'erase');
+  $('#score').classList.toggle('live-ink', liveTool === 'pen' || liveTool === 'lasso');
+  $('#lvLasso').classList.toggle('hidden', liveTool !== 'lasso');
+  if (liveTool !== 'lasso') { lassoSel = new Set(); lassoPath = null; lassoDrag = null; queueInk(); }
   if (liveTool === 'skipLine') toast('省略したい行を、タップしてください(もう一度タップで、復元)');
   if (liveTool === 'skipBar') toast('省略したい小節を、タップしてください(もう一度タップで、復元)');
 }
