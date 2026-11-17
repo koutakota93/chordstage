@@ -1244,6 +1244,18 @@ document.querySelectorAll('dialog form').forEach((f) => f.addEventListener('keyd
 // 残すものを選んでもらってから削除する(syncCtx に保留しておく)
 let syncCtx = null;
 const emptyReport = () => ({ addedRep: [], updatedRep: [], addedSongs: [], updatedSongs: [], addedSets: [], updatedSets: [], pendingSongs: [], pendingSets: [], tombNew: {} });
+// セットリストの、曲ごとのライブ編集(overrides)を、曲ごとに、新しい方(at)を採用して、まとめる
+function mergeOverrides(a, b) {
+  const out = {};
+  const ids = new Set([...Object.keys(a.overrides || {}), ...Object.keys(b.overrides || {})]);
+  ids.forEach((id) => {
+    const oa = (a.overrides || {})[id], ob = (b.overrides || {})[id];
+    if (!oa) { out[id] = ob; return; }
+    if (!ob) { out[id] = oa; return; }
+    out[id] = (oa.at || a.updatedAt || 0) >= (ob.at || b.updatedAt || 0) ? oa : ob;
+  });
+  return out;
+}
 async function mergeIncoming(data) {
   const tombLocal = getTomb();
   const tombNew = {}; // 取り込む側で新しく分かった削除の記録
@@ -1262,8 +1274,18 @@ async function mergeIncoming(data) {
   for (const x of data.setlists || []) {
     if (!x || !x.id || !Array.isArray(x.songIds) || dead(x)) continue;
     const mine = localSets.find((y) => y.id === x.id);
-    if (!mine) { await db.putSetlist(x); rep.addedSets.push(x); }
-    else if ((mine.updatedAt || 0) < (x.updatedAt || 0)) { await db.putSetlist(x); rep.updatedSets.push(x); }
+    if (!mine) { await db.putSetlist(x); rep.addedSets.push(x); continue; }
+    // 曲順・名前などは、セットリスト全体の更新が新しい方を採用する。ライブ編集(手書き・省略・キーなど)は、曲ごとに、新しい方を採用する
+    // (一方で曲順を変え、もう一方で手書きを足しても、どちらも消えない)
+    const remoteNewer = (mine.updatedAt || 0) < (x.updatedAt || 0);
+    const base = remoteNewer ? x : mine;
+    const ov = mergeOverrides(x, mine);
+    const changed = remoteNewer || JSON.stringify(ov) !== JSON.stringify(mine.overrides || {});
+    if (!changed) continue;
+    const merged = { ...base, overrides: ov };
+    if (!remoteNewer) merged.updatedAt = Math.max(mine.updatedAt || 0, x.updatedAt || 0);
+    await db.putSetlist(merged);
+    rep.updatedSets.push(merged);
   }
   // 読み仮名: 名前ごとに、更新が新しい方を採用する(端末ごとに設定した分が、混ざって残る)
   let yc = 0;
@@ -3070,6 +3092,7 @@ async function saveLive(o, { noUndo = false } = {}) {
     if (liveUndo.stack.length > 60) liveUndo.stack.shift();
   }
   set.overrides = set.overrides || {};
+  o.at = Date.now(); // この曲のライブ編集を、いつ変えたか(同期で、曲ごとに、新しい方を採用する)
   set.overrides[cur.id] = o;
   await saveSet(set);
   applySkipClasses();
@@ -3216,11 +3239,30 @@ function inkLive(ctx, pts) { // 書いている最中は、最後の1区間だ�
 // 文字サイズが、書いたときと同じなら、ぴったり同じ場所に出る(ずれない)。文字サイズを変えたときは、その比率で、拡大・縮小して、行に付いてくる。
 // (古い形式の線は、行の幅・高さに対する割合で、これまでどおり表示する)
 const curFs = () => parseFloat(getComputedStyle($('#score')).fontSize) || 30;
+// 線は、まとまり(グループ: 1つの文字・書き込みを作る、続けて書いた複数の線)ごとに、1つの行に付ける。
+// 位置は、「その行(.line)の左上からの距離(px)」と、書いたときの文字サイズ(fs)で覚える。同じグループの線は、同じ行を基準にするので、
+// 端末が違って、行の位置や高さが、少し違っても、グループが、ばらばらにならずに、1つの形のまま付いてくる(文字サイズが違うときは、その比率で拡大・縮小)
+const lineOf = (b) => { const k = blocks[b]; return k ? (k.el.querySelector('.line') || k.el) : null; };
+function anchorRect(b, rects, kind = 'L') {
+  const key = kind + b;
+  let r = rects && rects.get(key);
+  if (!r) {
+    const e = kind === 'L' ? lineOf(b) : (blocks[b] && blocks[b].el);
+    if (!e) return null;
+    r = e.getBoundingClientRect();
+    if (rects) rects.set(key, r);
+  }
+  return r;
+}
 function inkToCanvas(st, cr, rects, fsNow = curFs()) {
-  const blk = blocks[st.b];
-  if (!blk) return null;
-  let r = rects && rects.get(st.b);
-  if (!r) { r = blk.el.getBoundingClientRect(); if (rects) rects.set(st.b, r); }
+  if (st.v === 3) {
+    const r = anchorRect(st.b, rects, 'L');
+    if (!r) return null;
+    const k = Math.abs(fsNow - st.fs) < 0.01 ? 1 : fsNow / st.fs;
+    return st.p.map(([x, y]) => [(r.left - cr.left) / inkZ + x * k, (r.top - cr.top) / inkZ + y * k]);
+  }
+  const r = anchorRect(st.b, rects, 'B'); // 古い形式(行全体の左上が基準)
+  if (!r) return null;
   if (st.v === 2) {
     const k = Math.abs(fsNow - st.fs) < 0.01 ? 1 : fsNow / st.fs;
     return st.p.map(([x, y]) => [(r.left - cr.left) / inkZ + x * k, (r.top - cr.top) / inkZ + y * k]);
@@ -3246,18 +3288,31 @@ let lassoDrag = null;          // 選んだ線を動かしている最中の、�
 let lassoPath = null;          // 投げ縄で、なぞっている最中の線(キャンバス上の座標)
 let inkClip = null;            // コピーした線
 // 古い形式の線(行の幅・高さに対する割合)を、いまの見た目のまま、「行の左上からの距離(px)」の形式に、一度だけ変える(以後は、ずれない)
+const idTime = (id) => parseInt(String(id || '').slice(1, 9), 36) || 0;
+const bboxNear = (bb, pt, d) => bb && pt[0] >= bb.x0 - d && pt[0] <= bb.x1 + d && pt[1] >= bb.y0 - d && pt[1] <= bb.y1 + d;
 function migrateInk(o, cr, fs) {
   let changed = false;
+  const list = o.ink || [];
+  list.forEach((st) => { if (!st.id) { st.id = inkId(); changed = true; } });
+  const old = list.filter((st) => st.v !== 3);
+  if (!old.length) return changed;
   const rects = new Map();
-  (o.ink || []).forEach((st) => {
-    if (!st.id) { st.id = inkId(); changed = true; }
-    if (st.v === 2) return;
-    const pts = inkToCanvas(st, cr, rects, fs);
-    const blk = blocks[st.b];
-    if (!pts || !blk) return;
-    const r = rects.get(st.b);
+  const items = old.map((st) => ({ st, pts: inkToCanvas(st, cr, rects, fs) })).filter((x) => x.pts && x.pts.length);
+  // 続けて書いた(時間が近く、場所も近い)線を、1つのグループにまとめて、最初の線の行に付ける
+  let grp = null;
+  items.forEach(({ st, pts }) => {
+    const t = idTime(st.id);
+    const near = grp && bboxNear(grp.bb, pts[0], 110) && (Math.abs(t - grp.t) < 3000 || grp.fixedTime);
+    if (!near) {
+      grp = { g: 'g' + st.id.slice(1), b: blockAtY(pts[0][1], cr), bb: null, t, fixedTime: false };
+    }
+    const r = anchorRect(grp.b, rects, 'L');
+    if (!r) return;
     st.p = pts.map(([x, y]) => [+(x - (r.left - cr.left) / inkZ).toFixed(2), +(y - (r.top - cr.top) / inkZ).toFixed(2)]);
-    st.v = 2; st.fs = +fs.toFixed(3);
+    st.v = 3; st.fs = +fs.toFixed(3); st.b = grp.b; st.g = grp.g; st.t = st.t || t;
+    const bb = strokeBBox([pts]);
+    grp.bb = grp.bb ? { x0: Math.min(grp.bb.x0, bb.x0), y0: Math.min(grp.bb.y0, bb.y0), x1: Math.max(grp.bb.x1, bb.x1), y1: Math.max(grp.bb.y1, bb.y1) } : bb;
+    grp.t = t;
     changed = true;
   });
   return changed;
@@ -3429,11 +3484,12 @@ function recognizeShape(pts, force) {
   const color = () => (drawing && drawing.color) || inkColorOf(inkPref.color);
   const inPoly = (poly, x, y) => { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const [xi, yi] = poly[i], [xj, yj] = poly[j]; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c; } return c; };
   // 線を、キャンバス上の座標から、行の左上からの距離(px)の形にして、保存用の線にする(いちばん上の点がある行に付ける)
-  const anchor = (pts, color, wFrac, cr, id) => {
-    const b = blockAtY(pts[0][1], cr);
-    const r = blocks[b].el.getBoundingClientRect();
-    const fs = curFs();
-    return { id: id || inkId(), v: 2, b, c: color, fs: +fs.toFixed(3), w: wFrac, p: pts.map(([x, y]) => [+(x - (r.left - cr.left) / inkZ).toFixed(2), +(y - (r.top - cr.top) / inkZ).toFixed(2)]) };
+  // 選んだ線・コピーした線を、まとめて、1つのグループ(1つの行)に付け直す
+  const anchorMany = (list, cr) => { // list: [{ pts(キャンバス上の座標), c, w, id? }]
+    const b = blockAtY(list[0].pts[0][1], cr);
+    const r = lineOf(b).getBoundingClientRect();
+    const fs = curFs(), g = 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), t = Date.now();
+    return list.map((it) => ({ id: it.id || inkId(), v: 3, g, t, b, c: it.c, fs: +fs.toFixed(3), w: it.w, p: it.pts.map(([x, y]) => [+(x - (r.left - cr.left) / inkZ).toFixed(2), +(y - (r.top - cr.top) / inkZ).toFixed(2)]) }));
   };
   const eraseAt = async (x, y, cr) => {
     const o = liveOvForWrite();
@@ -3459,7 +3515,8 @@ function recognizeShape(pts, force) {
     drawing = { pts: [[x, y]], cr, snapped: false };
     const blkIdx = blockAtY(y, cr);
     drawing.b = blkIdx;
-    drawing.rect = blocks[blkIdx].el.getBoundingClientRect(); // 書き始めた時点の行の位置(あとで、この位置を基準に保存する)
+    drawing.rects = new Map(); // 書き始めた時点の、すべての行の位置(あとで、この位置を基準に保存する。スクロール中に書いても、ずれない)
+    blocks.forEach((_, i) => anchorRect(i, drawing.rects, 'L'));
     if (inkPref.adapt && blocks[blkIdx].el.classList.contains('cur')) drawing.color = adaptInk(inkPref.color, hlColor()); // ハイライトの行に書くときは、最初から、見やすい色で
     const ctx = sizeInk();
     inkStyle(ctx, color(), inkPref.width);
@@ -3548,7 +3605,8 @@ function recognizeShape(pts, force) {
       if (!mv || (Math.abs(mv.dx) < 1 && Math.abs(mv.dy) < 1)) { queueInk(); return; }
       const o = liveOvForWrite();
       const cr = d.cr, items = selectedCanvas();
-      const map = new Map(items.map(({ st, pts }) => [st.id, anchor(pts.map(([x, y]) => [x + mv.dx, y + mv.dy]), st.c, st.w, cr, st.id)]));
+      const moved = anchorMany(items.map(({ st, pts }) => ({ pts: pts.map(([x, y]) => [x + mv.dx, y + mv.dy]), c: st.c, w: st.w, id: st.id })), cr);
+      const map = new Map(moved.map((m) => [m.id, m]));
       o.ink = o.ink.map((st) => map.get(st.id) || st);
       await saveLive(o);
       return;
@@ -3559,10 +3617,20 @@ function recognizeShape(pts, force) {
     const fs = curFs();
     const o = liveOvForWrite();
     if (!o) return;
-    const r = d.rect, cr = d.cr; // 書き始めた時点の、行の位置を基準にする(スクロール中に書いても、ずれない)
+    const cr = d.cr;
+    // 直前に書いた線と、時間(2.5秒以内)も場所(近く)も近ければ、同じグループ(同じ行)に入れる。そうでなければ、新しいグループ
+    const now = Date.now();
+    let b = blockAtY(pts[0][1], cr), g = 'g' + now.toString(36) + Math.random().toString(36).slice(2, 5);
+    const prev = (o.ink || [])[(o.ink || []).length - 1];
+    if (prev && prev.v === 3 && prev.g && now - (prev.t || 0) < 2500) {
+      const rects0 = new Map();
+      const grpPts = (o.ink || []).filter((st) => st.g === prev.g).map((st) => inkToCanvas(st, cr, rects0, fs)).filter(Boolean);
+      if (bboxNear(strokeBBox(grpPts), pts[0], 110)) { b = prev.b; g = prev.g; }
+    }
+    const r = d.rects.get('L' + b) || anchorRect(b, null, 'L');
     o.ink = [...(o.ink || []), {
-      id: inkId(), v: 2, b: d.b, c: inkPref.color, fs: +fs.toFixed(3), w: +(inkPref.width / fs).toFixed(4),
-      p: pts.map(([x, y]) => [+(x - (r.left - cr.left) / inkZ).toFixed(2), +(y - (r.top - cr.top) / inkZ).toFixed(2)]), // 行の左上からの距離(px)
+      id: inkId(), v: 3, g, t: now, b, c: inkPref.color, fs: +fs.toFixed(3), w: +(inkPref.width / fs).toFixed(4),
+      p: pts.map(([x, y]) => [+(x - (r.left - cr.left) / inkZ).toFixed(2), +(y - (r.top - cr.top) / inkZ).toFixed(2)]), // 行(.line)の左上からの距離(px)
     }];
     queueInk(); // 先に、画面を更新してから、保存する(保存を待たずに、線が整う)
     await saveLive(o);
@@ -3584,7 +3652,7 @@ function recognizeShape(pts, force) {
     if (!cv || !o) return;
     const cr = cv.getBoundingClientRect(), k = curFs() / inkClip.fs;
     const ox = cv._w / 2 - (inkClip.w * k) / 2, oy = cv._h / 2 - (inkClip.h * k) / 2;
-    const made = inkClip.items.map((it) => anchor(it.pts.map(([x, y]) => [ox + x * k, oy + y * k]), it.c, it.w, cr));
+    const made = anchorMany(inkClip.items.map((it) => ({ pts: it.pts.map(([x, y]) => [ox + x * k, oy + y * k]), c: it.c, w: it.w })), cr);
     o.ink = [...(o.ink || []), ...made];
     lassoSel = new Set(made.map((m) => m.id));
     await saveLive(o);
