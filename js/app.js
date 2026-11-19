@@ -431,8 +431,10 @@ async function restoreSong(s) {
 async function deleteSongById(id) {
   await db.deleteSong(id);
   markDeleted(id);
-  for (const set of setlists.filter((x) => x.songIds.includes(id))) {
+  for (const set of setlists.filter((x) => x.songIds.includes(id) || (x.stock || []).some((e) => e.id === id))) {
     set.songIds = set.songIds.filter((x) => x !== id);
+    set.stock = (set.stock || []).filter((e) => e.id !== id);
+    if (set.overrides) delete set.overrides[id];
     set.updatedAt = Date.now();
     await db.putSetlist(set);
   }
@@ -581,7 +583,7 @@ function renderSetView() {
   const mbox = $('#svMembers');
   mbox.textContent = '';
   if ((set.members || []).length) { mbox.append(el('small', 'mlabelsmall', 'メンバー表(曲ごとに、この中から担当を選びます)')); mbox.append(memberChips(set.members)); }
-  $('#svMeta').textContent = [set.date && '本番 ' + fmtDate(set.date) + '(' + dateBadge(set.date) + ')', items.length + '曲'].filter(Boolean).join(' ・ ');
+  $('#svMeta').textContent = [set.date && '本番 ' + fmtDate(set.date) + '(' + dateBadge(set.date) + ')', items.length + '曲', stockEntries(set).length ? '保管庫 ' + stockEntries(set).length + '曲' : ''].filter(Boolean).join(' ・ ');
   const ol = $('#svList');
   ol.textContent = '';
   items.forEach((song, i) => {
@@ -621,7 +623,8 @@ function renderSetView() {
       mk('キー', 'キー・カポ(このセットリストだけ)', () => openKeyDlg(song)),
       mk('▲', '上へ', () => moveInSet(song.id, -1)),
       mk('▼', '下へ', () => moveInSet(song.id, 1)),
-      mk('✕', 'セットリストから外す', () => removeFromSet(song.id), 'danger'),
+      mk('保管', '保管庫へ(手書き・省略などの編集を、残したまま、置いておく)', () => stockSongs([song.id]), 'stockbtn'),
+      mk('✕', 'セットリストから外す(このセットリスト専用の編集も、消える)', () => removeFromSet(song.id), 'danger'),
     );
     li.onclick = () => {
       if (svSelectMode) { const cb = li.querySelector('.svcb'); cb.checked = !cb.checked; cb.onchange(); return; }
@@ -630,6 +633,7 @@ function renderSetView() {
     ol.append(li);
   });
   if (!svSelectMode) enableDrag(ol);
+  renderStock(set);
   updateSvBar();
   $('#svEmpty').textContent = items.length ? '' : 'まだ曲がありません。「＋ 曲を追加」で、ライブラリから選んで追加します。';
 }
@@ -743,8 +747,9 @@ $('#svOrder').onclick = async () => {
 };
 $('#svRemove').onclick = async () => {
   const set = setlists.find((x) => x.id === curSetId);
-  if (!confirm('選んだ' + svSel.size + '曲を、セットリストから外します(曲そのものは消えません)。よろしいですか?')) return;
+  if (!confirm('選んだ' + svSel.size + '曲を、セットリストから外します(曲そのものは消えません)。\nこのセットリスト専用の編集(手書き・省略・キー・担当)も、消えます。残したいときは、「選んだ曲を保管庫へ」を使ってください。よろしいですか?')) return;
   set.songIds = set.songIds.filter((id) => !svSel.has(id));
+  [...svSel].forEach((id) => { if (set.overrides) delete set.overrides[id]; if (set.songMembers) delete set.songMembers[id]; });
   await saveSet(set);
   svSel.clear();
   renderSetView();
@@ -873,9 +878,91 @@ async function moveInSet(songId, d) {
   await saveSet(set);
   renderSetView();
 }
+// 保管庫: いまは演奏しない曲を、このセットリスト専用の編集(手書き・省略・キー・担当)を残したまま、置いておく
+const stockEntries = (set) => (set.stock || []).filter((e) => songs.some((s) => s.id === e.id));
+function editSummary(set, songId) { // 残っている編集の、まとめ
+  const ov = (set.overrides && set.overrides[songId]) || {};
+  const song = songs.find((x) => x.id === songId) || {};
+  const chips = [];
+  if ((ov.ink || []).length) chips.push('手書き ' + new Set(ov.ink.map((st) => st.g || st.id)).size);
+  const sk = (ov.skipLines || []).length + (ov.skipBars || []).length;
+  if (sk) chips.push('省略 ' + sk);
+  if (ov.transpose != null || ov.capo != null) chips.push('キー ' + [ov.transpose != null ? (ov.transpose > 0 ? '+' : '') + ov.transpose : '', ov.capo != null ? 'Capo ' + ov.capo : ''].filter(Boolean).join(' '));
+  if (set.songMembers && set.songMembers[songId]) chips.push('担当');
+  if ((song.memos || []).length) chips.push('メモ ' + song.memos.length);
+  return chips;
+}
+async function stockSongs(ids) {
+  const set = setlists.find((x) => x.id === curSetId);
+  if (!set) return;
+  const order = [...set.songIds];
+  set.stock = set.stock || [];
+  ids.forEach((id) => {
+    const from = order.indexOf(id);
+    if (from < 0) return;
+    set.stock = set.stock.filter((e) => e.id !== id);
+    set.stock.push({ id, at: Date.now(), from });
+  });
+  set.songIds = set.songIds.filter((id) => !ids.includes(id));
+  await saveSet(set);
+  svSel.clear();
+  renderSetView();
+  toast(ids.length + '曲を、保管庫へ入れました(手書き・省略などの編集は、残っています)');
+}
+async function unstockSong(id) {
+  const set = setlists.find((x) => x.id === curSetId);
+  const e = (set.stock || []).find((x) => x.id === id);
+  if (!e) return;
+  set.stock = set.stock.filter((x) => x.id !== id);
+  if (!set.songIds.includes(id)) set.songIds.splice(Math.min(Math.max(0, e.from || 0), set.songIds.length), 0, id); // 元の位置へ
+  await saveSet(set);
+  renderSetView();
+  toast('保管庫から、セットリストに戻しました');
+}
+async function dropStock(id) {
+  const set = setlists.find((x) => x.id === curSetId);
+  const song = songs.find((x) => x.id === id);
+  if (!confirm('「' + (song ? song.title : '') + '」を、保管庫から完全に外します。\nこのセットリスト専用の編集(手書き・省略・キー・担当)も、消えます(曲そのものや、曲のメモは、消えません)。よろしいですか?')) return;
+  set.stock = (set.stock || []).filter((x) => x.id !== id);
+  if (set.overrides) delete set.overrides[id];
+  if (set.songMembers) delete set.songMembers[id];
+  await saveSet(set);
+  renderSetView();
+}
+function renderStock(set) {
+  const list = stockEntries(set);
+  $('#svStock').classList.toggle('hidden', !list.length);
+  $('#svStockN').textContent = list.length ? '(' + list.length + '曲)' : '';
+  const ul = $('#svStockList');
+  ul.textContent = '';
+  list.forEach((e) => {
+    const song = songs.find((x) => x.id === e.id);
+    const li = el('li');
+    const box = el('div', 'grow');
+    box.append(el('b', '', song.title));
+    box.append(el('small', '', [song.artist, song.key && 'Key ' + song.key].filter(Boolean).join(' / ')));
+    const chips = editSummary(set, e.id);
+    if (chips.length) { const r = el('div', 'chiprow'); chips.forEach((c) => r.append(el('span', 'chip', c))); box.append(r); }
+    const back = el('button', 'primary', '戻す');
+    back.type = 'button'; back.title = '元の位置に戻す';
+    back.onclick = () => unstockSong(e.id);
+    const drop = el('button', 'danger', '完全に外す');
+    drop.type = 'button';
+    drop.onclick = () => dropStock(e.id);
+    li.append(box, back, drop);
+    li.onclick = () => openSong(e.id, { setId: set.id }); // 保管庫の曲も、編集(手書きなど)を確認できる
+    ul.append(li);
+  });
+}
+$('#svStockBtn').onclick = () => { if (svSel.size) stockSongs([...svSel]); };
 async function removeFromSet(songId) {
   const set = setlists.find((x) => x.id === curSetId);
+  const song = songs.find((x) => x.id === songId);
+  const has = editSummary(set, songId).filter((c) => !c.startsWith('メモ'));
+  if (!confirm('「' + (song ? song.title : '') + '」を、セットリストから外します。' + (has.length ? '\nこのセットリスト専用の編集(' + has.join('・') + ')も、消えます。残したいときは、「保管」を使ってください。' : '') + '\nよろしいですか?')) return;
   set.songIds = set.songIds.filter((id) => id !== songId);
+  if (set.overrides) delete set.overrides[songId];
+  if (set.songMembers) delete set.songMembers[songId];
   await saveSet(set);
   renderSetView();
 }
@@ -920,7 +1007,8 @@ $('#pkAdd').onclick = async () => {
   const ids = [...$('#pkList').querySelectorAll('input:checked')].map((i) => i.value);
   if (!ids.length) return toast('曲を選んでください');
   const set = setlists.find((x) => x.id === curSetId);
-  set.songIds = [...set.songIds, ...ids];
+  set.stock = (set.stock || []).filter((e) => !ids.includes(e.id)); // 保管庫にある曲を選んだときは、保管庫から出す(編集は、残ったまま)
+  set.songIds = [...set.songIds, ...ids.filter((id) => !set.songIds.includes(id))];
   await saveSet(set);
   $('#pickDlg').close();
   renderSetView();
@@ -936,7 +1024,7 @@ function openAddSet(s) {
     const has = set.songIds.includes(menuSong.id);
     const b = el('button', '', set.name + (has ? '(追加済み)' : ''));
     b.type = 'button'; b.disabled = has;
-    b.onclick = async () => { set.songIds = [...set.songIds, menuSong.id]; await saveSet(set); $('#addSetDlg').close(); toast('「' + set.name + '」に追加しました'); };
+    b.onclick = async () => { set.stock = (set.stock || []).filter((e) => e.id !== menuSong.id); set.songIds = [...set.songIds, menuSong.id]; await saveSet(set); $('#addSetDlg').close(); toast('「' + set.name + '」に追加しました'); };
     li.append(b);
     ul.append(li);
   });
